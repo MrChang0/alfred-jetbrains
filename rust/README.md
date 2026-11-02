@@ -58,6 +58,10 @@ jb open [path] [--product <id>] [--app <app>] [--bin <bin>]
 jb <path>                     # shorthand for `jb open <path>`
 jb terminal [path]            # open a directory in the configured terminal
 jb doctor                     # print discovery diagnostics
+jb forget <path>              # hide a project
+jb forget --clear             # clear the forgotten list
+jb remember <path>            # restore a forgotten project
+jb forgotten                  # list forgotten projects
 jb pin <path>
 jb unpin <path>
 jb toggle-pin <path>
@@ -118,6 +122,8 @@ pins_file = "~/.config/alfred-jetbrains/pins.json"
 workflow_name = "alfred-jetbrains-rust"
 default_product = "idea"
 terminal = "Terminal"
+ignore = ["~/Downloads/*", "*-scratch"]
+forgotten_file = "~/.config/alfred-jetbrains/forgotten.json"
 
 [products.idea]
 preference_prefix = "IntelliJIdea"
@@ -134,6 +140,18 @@ Pins are stored as a JSON array of absolute paths in `pins_file`.
 - `⌥` reveal in Finder
 - `⌃` copy the project path
 - `⇧` open the project in `terminal`
+- `⌘⇧` forget the project
+
+## Ignoring and forgetting
+
+- `ignore` config globs are matched case-insensitively against the project name
+  and full path, e.g. `["~/Downloads/*", "*-scratch"]`.
+- `jb forget <path>` hides one project; `jb remember <path>` restores it, and
+  `jb forget --clear` empties the forgotten list.
+- Ignored and forgotten projects stay hidden even when pinned.
+
+The Alfred item exposes `⌘⇧` for `jb forget`; run `jb forgotten` or
+`jb remember` from the terminal to restore.
 
 ## Diagnostics
 
@@ -166,7 +184,8 @@ directories. The normal project list hides linked worktrees by default; set
    project opened in multiple products or versions keeps its most recent IDE.
 4. Missing project directories are hidden unless `--show-stale` (or
    `show_stale = true`) is used; pinned projects are always shown. The current
-   git branch is shown for projects and worktrees.
+   git branch is shown for projects and worktrees. Projects matching `ignore`
+   globs or in the forgotten list are hidden.
 5. The IDE application is matched by product name and, when present, by the
    settings version. The app's `Contents/MacOS` binary is preferred, then
    `JB_BINARIES`/`PATH`.

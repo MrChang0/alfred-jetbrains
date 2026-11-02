@@ -30,6 +30,8 @@ pub struct Config {
     pub workflow_name: String,
     pub default_product: String,
     pub terminal: String,
+    pub ignore: Vec<String>,
+    pub forgotten_file: PathBuf,
     pub products: Vec<ProductConfig>,
 }
 
@@ -44,6 +46,8 @@ struct ConfigFile {
     workflow_name: Option<String>,
     default_product: Option<String>,
     terminal: Option<String>,
+    ignore: Option<Vec<String>>,
+    forgotten_file: Option<String>,
     #[serde(default)]
     products: HashMap<String, ProductOverride>,
 }
@@ -109,6 +113,12 @@ impl Config {
                 .unwrap_or_else(|| "alfred-jetbrains-rust".to_string()),
             default_product: file.default_product.unwrap_or_else(|| "idea".to_string()),
             terminal: file.terminal.unwrap_or_else(|| "Terminal".to_string()),
+            ignore: file.ignore.unwrap_or_default(),
+            forgotten_file: expand_path(
+                file.forgotten_file
+                    .as_deref()
+                    .unwrap_or("~/.config/alfred-jetbrains/forgotten.json"),
+            ),
             products,
         })
     }

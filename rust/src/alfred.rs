@@ -227,6 +227,10 @@ impl Item {
             "shift".to_string(),
             modifier("Open in Terminal", "terminal"),
         );
+        mods.insert(
+            "cmd+shift".to_string(),
+            modifier("Forget project", "forget"),
+        );
 
         Self {
             uid: format!("{:016x}", fnv1a(&entry.key)),
@@ -299,6 +303,8 @@ mod tests {
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
             terminal: "Terminal".to_string(),
+            ignore: vec![],
+            forgotten_file: PathBuf::from("/dev/null"),
             products: default_products(),
         }
     }
@@ -356,6 +362,7 @@ mod tests {
         assert_eq!(item.title, "alpha");
         assert_eq!(item.arg, "/tmp/alpha");
         assert_eq!(item.icon.type_.as_deref(), Some("fileicon"));
+        assert!(item.mods.as_ref().unwrap().contains_key("cmd+shift"));
         let variables = item.variables.unwrap();
         assert_eq!(variables["jb_product"], "idea");
         assert_eq!(variables["jb_version"], "2026.2");

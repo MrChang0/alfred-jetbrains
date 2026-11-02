@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
+glob = "0.3"
 plist = "1"
 regex = "1"
 roxmltree = "0.20"

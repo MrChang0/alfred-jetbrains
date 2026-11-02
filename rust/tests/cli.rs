@@ -167,7 +167,61 @@ fn doctor_reports_settings_and_projects() {
     assert!(text.contains("settings roots:"));
     assert!(text.contains("settings dirs:"));
     assert!(text.contains("projects:"));
+    assert!(text.contains("ignore patterns:"));
+    assert!(text.contains("forgotten:"));
     assert!(text.contains("terminal: Terminal"));
+}
+
+#[test]
+fn forget_and_remember_project() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path();
+    write_fixture(home);
+    let config = home.join("config.toml");
+    let alpha = home.join("projects/alpha");
+
+    let output = run(home, &config, &["forget", alpha.to_str().unwrap()]);
+    assert!(output.status.success());
+
+    let json = search(home, &config, "", &[]);
+    assert!(
+        !json["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["title"] == "Alpha")
+    );
+
+    let output = run(home, &config, &["remember", alpha.to_str().unwrap()]);
+    assert!(output.status.success());
+
+    let json = search(home, &config, "", &[]);
+    assert!(
+        json["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["title"] == "Alpha")
+    );
+}
+
+#[test]
+fn config_ignore_hides_projects() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path();
+    write_fixture(home);
+    let config = home.join("config.toml");
+    fs::write(&config, "ignore = [\"*beta*\"]\n").unwrap();
+
+    let json = search(home, &config, "", &[]);
+    let titles = json["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["title"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(titles.contains(&"Alpha"));
+    assert!(!titles.contains(&"beta"));
 }
 
 #[test]

@@ -19,6 +19,7 @@ const ACTION_SCRIPT: &str = r#"project="${1:-$jb_path}"
 action="${jb_action:-open}"
 case "$action" in
   pin) ./bin/jb toggle-pin "$project" ;;
+  forget) ./bin/jb forget "$project" ;;
   terminal) ./bin/jb terminal "$project" ;;
   reveal) /usr/bin/open -R "$project" ;;
   copy) printf '%s' "$project" | /usr/bin/pbcopy ;;
@@ -217,8 +218,9 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
              `datagrip`, `dataspell`, `rider`, `rubymine`, `rustrover`, \
              `fleet`, `aqua`, `appcode`, or `writerside`. Add `~` to see linked \
              git worktrees (`jb~`, `idea~`). Hold ⌘ to pin/unpin, ⌥ to reveal in \
-             Finder, ⌃ to copy the path, and ⇧ to open a terminal. You can also \
-             select any folder in Alfred or Finder and use Open in JetBrains.",
+             Finder, ⌃ to copy the path, ⇧ to open a terminal, and ⌘⇧ to forget. \
+             You can also select any folder in Alfred or Finder and use Open in \
+             JetBrains.",
         ),
     );
     root.insert(
@@ -386,6 +388,18 @@ mod tests {
             Some("./bin/jb search --product idea --worktrees --filter \"$1\"")
         );
 
+        let action = objects
+            .iter()
+            .map(|object| object.as_dictionary().unwrap())
+            .find(|object| object["type"].as_string() == Some("alfred.workflow.action.script"))
+            .expect("action object");
+        assert!(
+            action["config"].as_dictionary().unwrap()["script"]
+                .as_string()
+                .unwrap()
+                .contains("forget)")
+        );
+
         let connections = dict["connections"].as_dictionary().unwrap();
         assert_eq!(connections.len(), objects.len() - 2);
     }
@@ -415,6 +429,8 @@ mod tests {
             workflow_name: "alfred-jetbrains-rust".to_string(),
             default_product: "idea".to_string(),
             terminal: "Terminal".to_string(),
+            ignore: vec![],
+            forgotten_file: PathBuf::from("/dev/null"),
             products: default_products(),
         };
 

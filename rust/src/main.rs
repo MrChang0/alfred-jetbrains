@@ -2,6 +2,7 @@ mod alfred;
 mod config;
 mod discovery;
 mod doctor;
+mod forgotten;
 mod hash;
 mod install;
 mod logging;
@@ -79,6 +80,22 @@ enum Commands {
 
     /// Print diagnostics about settings, apps, and projects.
     Doctor,
+
+    /// Hide a project from search results.
+    Forget {
+        #[arg(value_name = "PATH")]
+        path: Option<PathBuf>,
+
+        /// Clear the forgotten list.
+        #[arg(long)]
+        clear: bool,
+    },
+
+    /// Restore a forgotten project.
+    Remember { path: PathBuf },
+
+    /// List forgotten projects.
+    Forgotten,
 
     /// Pin a project.
     Pin { path: PathBuf },
@@ -175,6 +192,40 @@ fn run() -> Result<()> {
         Commands::Doctor => {
             println!("{}", doctor::run(&config)?);
         }
+        Commands::Forget { path, clear } => {
+            if clear {
+                forgotten::clear(&config.forgotten_file)?;
+                println!("forgotten projects cleared");
+            } else if let Some(path) = path {
+                let added = forgotten::forget(&config.forgotten_file, &path)?;
+                println!(
+                    "{}",
+                    if added {
+                        "forgotten"
+                    } else {
+                        "already forgotten"
+                    }
+                );
+            } else {
+                anyhow::bail!("provide a path or --clear");
+            }
+        }
+        Commands::Remember { path } => {
+            let removed = forgotten::remember(&config.forgotten_file, &path)?;
+            println!(
+                "{}",
+                if removed {
+                    "remembered"
+                } else {
+                    "not forgotten"
+                }
+            );
+        }
+        Commands::Forgotten => {
+            for path in pins::load(&config.forgotten_file)? {
+                println!("{path}");
+            }
+        }
         Commands::Pin { path } => {
             let added = pins::pin(&config.pins_file, &path)?;
             println!("{}", if added { "pinned" } else { "already pinned" });
@@ -245,6 +296,9 @@ fn is_subcommand(value: &str) -> bool {
             | "open"
             | "terminal"
             | "doctor"
+            | "forget"
+            | "remember"
+            | "forgotten"
             | "pin"
             | "unpin"
             | "toggle-pin"

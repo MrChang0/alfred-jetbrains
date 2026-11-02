@@ -4,7 +4,7 @@ use std::{collections::HashSet, fmt::Write as _, fs, path::Path};
 
 use anyhow::Result;
 
-use crate::{config, config::Config, discovery, pins};
+use crate::{config, config::Config, discovery, forgotten, pins};
 
 pub fn run(config: &Config) -> Result<String> {
     let mut out = String::new();
@@ -58,6 +58,14 @@ pub fn run(config: &Config) -> Result<String> {
         "pins: {} ({})",
         config.pins_file.display(),
         pin_keys.len()
+    )?;
+    let forgotten_keys = forgotten::load_keys(&config.forgotten_file).unwrap_or_default();
+    writeln!(out, "ignore patterns: {}", config.ignore.len())?;
+    writeln!(
+        out,
+        "forgotten: {} ({})",
+        config.forgotten_file.display(),
+        forgotten_keys.len()
     )?;
     writeln!(out, "default product: {}", config.default_product)?;
     writeln!(out, "terminal: {}", config.terminal)?;

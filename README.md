@@ -20,10 +20,12 @@ installed IDE and every installed version.
 - **Git worktrees** — `jb~` / `idea~` list linked worktrees with their branches;
   they are hidden from the normal project list
 - **Git branch** — shown in the subtitle for every git checkout
+- **Ignore / forget** — hide projects with config globs or `jb forget`;
+  `jb remember` restores them
 - **Terminal & diagnostics** — `⇧` opens a terminal; `jb doctor` prints what
   the CLI sees
 - **Alfred modifiers** — `⌘` pin/unpin, `⌥` reveal in Finder, `⌃` copy path,
-  `⇧` open in Terminal
+  `⇧` open in Terminal, `⌘⇧` forget
 
 ## Requirements
 
@@ -84,8 +86,27 @@ Use `--product` to override, or set `default_product` in the config.
 In Alfred or Finder, select any folder and run the **Open in JetBrains** File
 Action for the same behavior.
 
-Hold `⌘` to pin/unpin, `⌥` to reveal in Finder, `⌃` to copy the path, and
-`⇧` to open the project in your terminal.
+Hold `⌘` to pin/unpin, `⌥` to reveal in Finder, `⌃` to copy the path, `⇧` to
+open the project in your terminal, and `⌘⇧` to forget it.
+
+### Hide projects
+
+Use config globs for broad rules:
+
+```toml
+ignore = ["~/Downloads/*", "*-scratch"]
+```
+
+Or forget a single project from the CLI or Alfred (`⌘⇧`):
+
+```shell
+jb forget <path>
+jb forgotten
+jb remember <path>
+jb forget --clear
+```
+
+Ignored and forgotten projects are hidden even when pinned.
 
 ## Configuration
 
@@ -110,6 +131,8 @@ pins_file = "~/.config/alfred-jetbrains/pins.json"
 workflow_name = "alfred-jetbrains-rust"
 default_product = "idea"
 terminal = "Terminal"
+ignore = ["~/Downloads/*", "*-scratch"]
+forgotten_file = "~/.config/alfred-jetbrains/forgotten.json"
 
 [products.idea]
 preference_prefix = "IntelliJIdea"

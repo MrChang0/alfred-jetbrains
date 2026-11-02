@@ -259,6 +259,8 @@ mod tests {
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
             terminal: "Terminal".to_string(),
+            ignore: vec![],
+            forgotten_file: PathBuf::from("/dev/null"),
             products: default_products(),
         };
 
@@ -311,6 +313,8 @@ mod tests {
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
             terminal: "Terminal".to_string(),
+            ignore: vec![],
+            forgotten_file: PathBuf::from("/dev/null"),
             products: default_products(),
         };
 
@@ -340,6 +344,8 @@ mod tests {
             workflow_name: "test".to_string(),
             default_product: "pycharm".to_string(),
             terminal: "Terminal".to_string(),
+            ignore: vec![],
+            forgotten_file: PathBuf::from("/dev/null"),
             products: default_products(),
         };
 
@@ -364,6 +370,8 @@ mod tests {
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
             terminal: "Terminal".to_string(),
+            ignore: vec![],
+            forgotten_file: PathBuf::from("/dev/null"),
             products: default_products(),
         };
         let target = resolve_target(&config, temp.path(), None, None, Some(bin.clone())).unwrap();
@@ -383,6 +391,8 @@ mod tests {
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
             terminal: "Terminal".to_string(),
+            ignore: vec![],
+            forgotten_file: PathBuf::from("/dev/null"),
             products: default_products(),
         };
         let error =

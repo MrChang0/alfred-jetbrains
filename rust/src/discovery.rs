@@ -526,6 +526,8 @@ mod tests {
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
             terminal: "Terminal".to_string(),
+            ignore: vec![],
+            forgotten_file: PathBuf::from("/dev/null"),
             products: default_products(),
         }
     }

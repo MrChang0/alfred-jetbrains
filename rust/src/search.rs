@@ -1,12 +1,13 @@
 //! Project search, filtering, and Alfred response assembly.
 
 use anyhow::{Result, anyhow};
+use glob::Pattern;
 
 use crate::{
     alfred::{self, AlfredResponse},
     config::Config,
     discovery::{self, ProjectEntry},
-    logging, pins,
+    forgotten, logging, pins,
 };
 
 pub struct SearchOptions {
@@ -39,6 +40,18 @@ pub fn search(config: &Config, options: SearchOptions) -> Result<AlfredResponse>
     } else if config.hide_worktrees {
         entries.retain(|entry| !entry.is_worktree);
     }
+
+    let forgotten_keys = match forgotten::load_keys(&config.forgotten_file) {
+        Ok(keys) => keys,
+        Err(error) => {
+            logging::debug(format!("forgotten: {error:#}"));
+            Default::default()
+        }
+    };
+    let ignore_patterns = compile_ignore(&config.ignore);
+    entries.retain(|entry| {
+        !forgotten_keys.contains(&entry.key) && !is_ignored(entry, &ignore_patterns)
+    });
 
     if let Some(product_id) = &product_id {
         entries.retain(|entry| &entry.product.id == product_id);
@@ -98,6 +111,38 @@ pub fn search(config: &Config, options: SearchOptions) -> Result<AlfredResponse>
     Ok(alfred::response(config, &entries))
 }
 
+fn compile_ignore(patterns: &[String]) -> Vec<Pattern> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    patterns
+        .iter()
+        .filter_map(|pattern| {
+            let expanded = if let Some(rest) = pattern.strip_prefix("~/") {
+                format!("{home}/{rest}")
+            } else {
+                pattern.clone()
+            };
+            match Pattern::new(&expanded.to_lowercase()) {
+                Ok(pattern) => Some(pattern),
+                Err(error) => {
+                    logging::debug(format!("ignore pattern {pattern:?}: {error}"));
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+fn is_ignored(entry: &ProjectEntry, patterns: &[Pattern]) -> bool {
+    if patterns.is_empty() {
+        return false;
+    }
+    let path = entry.path.to_string_lossy().to_lowercase();
+    let name = entry.name.to_lowercase();
+    patterns
+        .iter()
+        .any(|pattern| pattern.matches(&path) || pattern.matches(&name))
+}
+
 fn resolve_product(
     config: &Config,
     product: Option<String>,
@@ -141,7 +186,7 @@ mod tests {
     use super::*;
     use crate::{
         config::{Config, default_products},
-        pins,
+        forgotten, pins,
     };
 
     fn test_config(settings: PathBuf, apps: PathBuf, pins_file: PathBuf) -> Config {
@@ -156,6 +201,8 @@ mod tests {
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
             terminal: "Terminal".to_string(),
+            ignore: vec![],
+            forgotten_file: PathBuf::from("/dev/null"),
             products: default_products(),
         }
     }
@@ -301,6 +348,57 @@ mod tests {
             .map(|item| item.title.clone())
             .collect::<Vec<_>>();
         assert_eq!(titles, vec!["beta", "Alpha"]);
+    }
+
+    #[test]
+    fn ignores_and_forgets_projects() {
+        let (temp, mut config) = fixture();
+        config.ignore = vec!["*beta*".to_string()];
+        config.forgotten_file = temp.path().join("forgotten.json");
+
+        let response = search(
+            &config,
+            SearchOptions {
+                product: None,
+                filter: String::new(),
+                show_stale: false,
+                worktrees: false,
+            },
+        )
+        .unwrap();
+        let titles = response
+            .items
+            .iter()
+            .map(|item| item.title.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(titles, vec!["Alpha"]);
+
+        let alpha = temp.path().join("projects/alpha");
+        forgotten::forget(&config.forgotten_file, &alpha).unwrap();
+        let response = search(
+            &config,
+            SearchOptions {
+                product: None,
+                filter: String::new(),
+                show_stale: false,
+                worktrees: false,
+            },
+        )
+        .unwrap();
+        assert!(!response.items.iter().any(|item| item.title == "Alpha"));
+
+        forgotten::remember(&config.forgotten_file, &alpha).unwrap();
+        let response = search(
+            &config,
+            SearchOptions {
+                product: None,
+                filter: String::new(),
+                show_stale: false,
+                worktrees: false,
+            },
+        )
+        .unwrap();
+        assert!(response.items.iter().any(|item| item.title == "Alpha"));
     }
 
     #[test]

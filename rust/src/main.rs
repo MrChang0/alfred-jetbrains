@@ -54,6 +54,10 @@ enum Commands {
         /// Show linked git worktrees instead of recent projects.
         #[arg(long)]
         worktrees: bool,
+
+        /// Sort order: recent, oldest, name, name-desc, path.
+        #[arg(long)]
+        sort: Option<String>,
     },
 
     /// Open a project in the IDE that last used it.
@@ -157,12 +161,14 @@ fn run() -> Result<()> {
             filter,
             show_stale,
             worktrees,
+            sort,
         } => {
             let options = SearchOptions {
                 product,
                 filter,
                 show_stale,
                 worktrees,
+                sort,
             };
             let response = match search::search(&config, options) {
                 Ok(response) => response,

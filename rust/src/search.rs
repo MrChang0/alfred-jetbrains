@@ -1,5 +1,7 @@
 //! Project search, filtering, and Alfred response assembly.
 
+use std::{cmp::Ordering, collections::HashMap};
+
 use anyhow::{Result, anyhow};
 use glob::Pattern;
 
@@ -15,10 +17,39 @@ pub struct SearchOptions {
     pub filter: String,
     pub show_stale: bool,
     pub worktrees: bool,
+    pub sort: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SortOrder {
+    Recent,
+    Oldest,
+    Name,
+    NameDesc,
+    Path,
+}
+
+impl SortOrder {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "recent" | "most-recent" | "newest" => Some(Self::Recent),
+            "oldest" | "least-recent" => Some(Self::Oldest),
+            "name" | "name-asc" | "a-z" => Some(Self::Name),
+            "name-desc" | "z-a" => Some(Self::NameDesc),
+            "path" => Some(Self::Path),
+            _ => None,
+        }
+    }
 }
 
 pub fn search(config: &Config, options: SearchOptions) -> Result<AlfredResponse> {
     let (product_id, filter) = resolve_product(config, options.product, options.filter)?;
+    let sort = options
+        .sort
+        .as_deref()
+        .and_then(SortOrder::parse)
+        .or_else(|| SortOrder::parse(&config.sort))
+        .unwrap_or(SortOrder::Recent);
     let pin_keys = match pins::load_keys(&config.pins_file) {
         Ok(keys) => keys,
         Err(error) => {
@@ -63,8 +94,16 @@ pub fn search(config: &Config, options: SearchOptions) -> Result<AlfredResponse>
     let mut entries = discovery::dedupe(entries);
 
     let filter = filter.trim().to_lowercase();
+    let mut scores: HashMap<String, u32> = HashMap::new();
     if !filter.is_empty() {
-        entries.retain(|entry| matches_filter(entry, &filter));
+        entries.retain(|entry| {
+            if let Some(score) = fuzzy_score(entry, &filter) {
+                scores.insert(entry.key.clone(), score);
+                true
+            } else {
+                false
+            }
+        });
     }
 
     entries.sort_by(|left, right| {
@@ -72,13 +111,17 @@ pub fn search(config: &Config, options: SearchOptions) -> Result<AlfredResponse>
             .pinned
             .cmp(&left.pinned)
             .then_with(|| {
-                right
-                    .open_timestamp
-                    .unwrap_or(i64::MIN)
-                    .cmp(&left.open_timestamp.unwrap_or(i64::MIN))
+                if filter.is_empty() {
+                    Ordering::Equal
+                } else {
+                    scores
+                        .get(&right.key)
+                        .copied()
+                        .unwrap_or(0)
+                        .cmp(&scores.get(&left.key).copied().unwrap_or(0))
+                }
             })
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-            .then_with(|| left.path.cmp(&right.path))
+            .then_with(|| compare_entries(left, right, sort))
     });
 
     if entries.is_empty() && filter.is_empty() {
@@ -166,15 +209,88 @@ fn resolve_product(
     Ok((None, filter))
 }
 
-fn matches_filter(entry: &ProjectEntry, filter: &str) -> bool {
-    entry.name.to_lowercase().contains(filter)
-        || entry.path.to_string_lossy().to_lowercase().contains(filter)
-        || entry.product.name.to_lowercase().contains(filter)
-        || entry.product.id.to_lowercase().contains(filter)
-        || entry
-            .version
-            .as_deref()
-            .is_some_and(|version| version.to_lowercase().contains(filter))
+fn compare_entries(left: &ProjectEntry, right: &ProjectEntry, sort: SortOrder) -> Ordering {
+    match sort {
+        SortOrder::Recent => right
+            .open_timestamp
+            .unwrap_or(i64::MIN)
+            .cmp(&left.open_timestamp.unwrap_or(i64::MIN))
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase())),
+        SortOrder::Oldest => left
+            .open_timestamp
+            .unwrap_or(i64::MAX)
+            .cmp(&right.open_timestamp.unwrap_or(i64::MAX))
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase())),
+        SortOrder::Name => left.name.to_lowercase().cmp(&right.name.to_lowercase()),
+        SortOrder::NameDesc => right.name.to_lowercase().cmp(&left.name.to_lowercase()),
+        SortOrder::Path => left.path.cmp(&right.path),
+    }
+    .then_with(|| left.path.cmp(&right.path))
+}
+
+fn fuzzy_score(entry: &ProjectEntry, filter: &str) -> Option<u32> {
+    let basename = entry
+        .path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_lowercase();
+    let candidates = [
+        entry.name.to_lowercase(),
+        basename,
+        entry.product.name.to_lowercase(),
+    ];
+    let mut best = candidates
+        .iter()
+        .filter_map(|field| fuzzy_match(field, filter))
+        .max();
+
+    // Paths contain random temp/home components; only accept a contiguous
+    // path match unless the query itself looks path-like.
+    let path = entry.path.to_string_lossy().to_lowercase();
+    let path_score = if filter.contains('/') || filter.contains('~') {
+        fuzzy_match(&path, filter)
+    } else {
+        path.find(filter)
+            .map(|position| 1000 + filter.chars().count() as u32 * 10 - position.min(200) as u32)
+    };
+    if let Some(score) = path_score {
+        best = Some(best.unwrap_or(0).max(score));
+    }
+    best
+}
+
+fn fuzzy_match(haystack: &str, needle: &str) -> Option<u32> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    if let Some(position) = haystack.find(needle) {
+        let needle_len = needle.chars().count() as u32;
+        return Some(1000 + needle_len * 10 - position.min(200) as u32);
+    }
+
+    let mut chars = haystack.chars().enumerate();
+    let mut last_index: Option<usize> = None;
+    let mut score = 100u32;
+    for needle_char in needle.chars() {
+        let mut found = None;
+        for (index, ch) in chars.by_ref() {
+            if ch == needle_char {
+                found = Some(index);
+                break;
+            }
+        }
+        let index = found?;
+        if let Some(last) = last_index {
+            if index == last + 1 {
+                score += 10;
+            } else {
+                score = score.saturating_sub((index - last - 1).min(20usize) as u32);
+            }
+        }
+        last_index = Some(index);
+    }
+    Some(score)
 }
 
 #[cfg(test)]
@@ -196,6 +312,7 @@ mod tests {
             app_roots: vec![apps],
             show_stale: false,
             hide_worktrees: true,
+            sort: "recent".to_string(),
             cache_seconds: 60,
             pins_file,
             workflow_name: "test".to_string(),
@@ -300,6 +417,7 @@ mod tests {
                 filter: String::new(),
                 show_stale: false,
                 worktrees: false,
+                sort: None,
             },
         )
         .unwrap();
@@ -313,6 +431,7 @@ mod tests {
                 filter: String::new(),
                 show_stale: false,
                 worktrees: true,
+                sort: None,
             },
         )
         .unwrap();
@@ -339,6 +458,7 @@ mod tests {
                 filter: String::new(),
                 show_stale: false,
                 worktrees: false,
+                sort: None,
             },
         )
         .unwrap();
@@ -348,6 +468,58 @@ mod tests {
             .map(|item| item.title.clone())
             .collect::<Vec<_>>();
         assert_eq!(titles, vec!["beta", "Alpha"]);
+    }
+
+    #[test]
+    fn fuzzy_matches_subsequence() {
+        assert!(fuzzy_match("pangolin-search", "pngln").is_some());
+        assert!(fuzzy_match("beta", "bt").is_some());
+        assert!(fuzzy_match("pangolin", "xyz").is_none());
+    }
+
+    #[test]
+    fn sorts_by_name_oldest_and_path() {
+        let (_temp, config) = fixture();
+        let order = |sort: &str| {
+            let response = search(
+                &config,
+                SearchOptions {
+                    product: None,
+                    filter: String::new(),
+                    show_stale: false,
+                    worktrees: false,
+                    sort: Some(sort.to_string()),
+                },
+            )
+            .unwrap();
+            response
+                .items
+                .iter()
+                .map(|item| item.title.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(order("name"), vec!["Alpha", "beta"]);
+        assert_eq!(order("oldest"), vec!["Alpha", "beta"]);
+        assert_eq!(order("path"), vec!["Alpha", "beta"]);
+        assert_eq!(order("name-desc"), vec!["beta", "Alpha"]);
+    }
+
+    #[test]
+    fn fuzzy_filter_keeps_subsequence_matches() {
+        let (_temp, config) = fixture();
+        let response = search(
+            &config,
+            SearchOptions {
+                product: None,
+                filter: "bt".to_string(),
+                show_stale: false,
+                worktrees: false,
+                sort: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(response.items.len(), 1);
+        assert_eq!(response.items[0].title, "beta");
     }
 
     #[test]
@@ -363,6 +535,7 @@ mod tests {
                 filter: String::new(),
                 show_stale: false,
                 worktrees: false,
+                sort: None,
             },
         )
         .unwrap();
@@ -382,6 +555,7 @@ mod tests {
                 filter: String::new(),
                 show_stale: false,
                 worktrees: false,
+                sort: None,
             },
         )
         .unwrap();
@@ -395,6 +569,7 @@ mod tests {
                 filter: String::new(),
                 show_stale: false,
                 worktrees: false,
+                sort: None,
             },
         )
         .unwrap();
@@ -411,6 +586,7 @@ mod tests {
                 filter: String::new(),
                 show_stale: true,
                 worktrees: false,
+                sort: None,
             },
         )
         .unwrap();
@@ -431,6 +607,7 @@ mod tests {
                 filter: String::new(),
                 show_stale: false,
                 worktrees: false,
+                sort: None,
             },
         )
         .unwrap();
@@ -447,6 +624,7 @@ mod tests {
                 filter: "idea alpha".to_string(),
                 show_stale: false,
                 worktrees: false,
+                sort: None,
             },
         )
         .unwrap();
@@ -464,6 +642,7 @@ mod tests {
                 filter: String::new(),
                 show_stale: false,
                 worktrees: false,
+                sort: None,
             },
         )
         .unwrap_err();

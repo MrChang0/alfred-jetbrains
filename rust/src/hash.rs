@@ -13,7 +13,13 @@ pub fn fnv1a(value: &str) -> u64 {
 pub fn uuid_like(value: &str) -> String {
     let first = fnv1a(value);
     let second = fnv1a(&format!("{value}\u{0}second"));
-    let hex = format!("{first:016x}{second:016x}");
+    let mut hex = format!("{first:016X}{second:016X}")
+        .chars()
+        .collect::<Vec<_>>();
+    // Force a valid UUID v4 shape: version nibble 4, variant nibble 8.
+    hex[12] = '4';
+    hex[16] = '8';
+    let hex = hex.into_iter().collect::<String>();
     format!(
         "{}-{}-{}-{}-{}",
         &hex[0..8],
@@ -35,5 +41,7 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(first.len(), 36);
         assert_eq!(first.matches('-').count(), 4);
+        assert_eq!(first.chars().nth(14), Some('4'));
+        assert_eq!(first.chars().nth(19), Some('8'));
     }
 }

@@ -68,6 +68,7 @@ pub fn run(config: &Config) -> Result<String> {
         forgotten_keys.len()
     )?;
     writeln!(out, "default product: {}", config.default_product)?;
+    writeln!(out, "sort: {}", config.sort)?;
     writeln!(out, "terminal: {}", config.terminal)?;
     writeln!(out, "hide worktrees: {}", config.hide_worktrees)?;
 

@@ -298,6 +298,7 @@ mod tests {
             app_roots: vec![],
             show_stale: false,
             hide_worktrees: true,
+            sort: "recent".to_string(),
             cache_seconds: 60,
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "test".to_string(),

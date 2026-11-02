@@ -140,6 +140,7 @@ fn config_prints_effective_settings() {
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["show_stale"], false);
+    assert_eq!(json["sort"], "recent");
     assert_eq!(json["terminal"], "Terminal");
     assert!(
         json["settings_roots"]
@@ -148,6 +149,37 @@ fn config_prints_effective_settings() {
             .iter()
             .any(|path| path.as_str().unwrap().ends_with("JetBrains"))
     );
+}
+
+#[test]
+fn alfred_user_config_env_overrides() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path();
+    write_fixture(home);
+    let config = home.join("config.toml");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_jb"))
+        .env("HOME", home)
+        .env("JB_CONFIG", &config)
+        .env("jb_terminal", "Ghostty")
+        .env("jb_show_stale", "1")
+        .env("jb_sort", "name")
+        .env("jb_ignore", "*.foo\n*.bar")
+        .args(["config"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["terminal"], "Ghostty");
+    assert_eq!(json["show_stale"], true);
+    assert_eq!(json["sort"], "name");
+    let ignore = json["ignore"].as_array().unwrap();
+    assert!(ignore.contains(&serde_json::Value::String("*.foo".to_string())));
+    assert!(ignore.contains(&serde_json::Value::String("*.bar".to_string())));
 }
 
 #[test]
@@ -269,7 +301,7 @@ fn install_writes_workflow_files() {
     }));
     assert!(objects.iter().any(|object| {
         object.as_dictionary().unwrap()["type"].as_string()
-            == Some("alfred.workflow.input.fileaction")
+            == Some("alfred.workflow.trigger.action")
     }));
 }
 

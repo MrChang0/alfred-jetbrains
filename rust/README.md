@@ -54,6 +54,7 @@ in each product's `keywords` list (`idea`, `pycharm`, `pstorm`, `wstorm`,
 
 ```
 jb search [--product <id>] [--filter <text>] [--show-stale] [--worktrees]
+          [--sort recent|oldest|name|name-desc|path]
 jb open [path] [--product <id>] [--app <app>] [--bin <bin>]
 jb <path>                     # shorthand for `jb open <path>`
 jb terminal [path]            # open a directory in the configured terminal
@@ -101,6 +102,20 @@ Action, so you can select any folder in Alfred or Finder.
 
 ## Configuration
 
+### Alfred configuration page
+
+Alfred Preferences → Workflows → JetBrains Projects (Rust) → Configure
+Workflow exposes `jb_terminal`, `jb_default_product`, `jb_show_stale`,
+`jb_hide_worktrees`, `jb_sort`, `jb_ignore`, `jb_settings_roots`, and
+`jb_app_roots`. Alfred passes these as environment variables to the CLI;
+
+- `jb_terminal`, `jb_default_product`, `jb_settings_roots`, `jb_app_roots`
+  override the TOML values,
+- `jb_show_stale` / `jb_hide_worktrees` are parsed as booleans,
+- `jb_ignore` lines are appended to the TOML `ignore` list.
+
+### TOML config
+
 The config file is `~/.config/alfred-jetbrains/config.toml` (override with
 `JB_CONFIG`):
 
@@ -117,7 +132,8 @@ app_roots = [
 ]
 show_stale = false
 hide_worktrees = true
-cache_seconds = 60
+sort = "recent"
+cache_seconds = 0   # 0 disables Alfred result caching
 pins_file = "~/.config/alfred-jetbrains/pins.json"
 workflow_name = "alfred-jetbrains-rust"
 default_product = "idea"
@@ -162,6 +178,20 @@ jb doctor
 Prints settings roots and product/version directories, matched application
 bundles, project/worktree/stale/pin counts, the terminal setting, and the
 installed workflow status.
+
+## Search
+
+Filtering uses a case-insensitive subsequence match, so `pngln` finds
+`pangolin`. When a query is present, matches are ordered by score; otherwise
+the configured `sort` order applies:
+
+- `recent` (default) — most recently opened first
+- `oldest` — least recently opened first
+- `name` / `name-desc` — project name A–Z / Z–A
+- `path` — full path
+
+Pinned projects always come first. Set the order with `--sort`, `sort` in the
+TOML config, or the **Sort order** field on the Alfred configuration page.
 
 ## Git worktrees
 

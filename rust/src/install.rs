@@ -29,7 +29,7 @@ case "$action" in
     elif [ -n "${jb_app:-}" ] && [ -d "$jb_app" ]; then
       /usr/bin/open -a "$jb_app" "$project"
     else
-      /usr/bin/open "$project"
+      ./bin/jb open "$project"
     fi
     ;;
 esac
@@ -97,7 +97,7 @@ fn install_in(home: &Path, config: &Config, options: InstallOptions) -> Result<P
 pub fn workflow_value(products: &[ProductConfig]) -> Value {
     let action_uid = hash::uuid_like("jb:action");
     let mut objects = Vec::new();
-    let mut search_uids = Vec::new();
+    let mut connected_uids = Vec::new();
     let mut seen = HashSet::new();
 
     let global_uid = hash::uuid_like("jb:search:all");
@@ -109,7 +109,7 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
         "Open JetBrains project",
         "searching projects",
     ));
-    search_uids.push(global_uid);
+    connected_uids.push(global_uid);
 
     let global_worktree_uid = hash::uuid_like("jb:search:worktrees:all");
     objects.push(search_object(
@@ -120,7 +120,7 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
         "Open a git worktree",
         "searching worktrees",
     ));
-    search_uids.push(global_worktree_uid);
+    connected_uids.push(global_worktree_uid);
 
     for product in products {
         let Some(keyword) = product
@@ -146,7 +146,7 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
             &format!("Open {} project", product.name),
             &format!("searching {} projects", product.name),
         ));
-        search_uids.push(uid);
+        connected_uids.push(uid);
 
         let worktree_uid = hash::uuid_like(&format!("jb:search:{keyword}:worktrees"));
         let worktree_script = format!(
@@ -161,16 +161,17 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
             &format!("Open {} worktree", product.name),
             &format!("searching {} worktrees", product.name),
         ));
-        search_uids.push(worktree_uid);
+        connected_uids.push(worktree_uid);
     }
 
     objects.push(action_object(&action_uid));
 
     let file_action_uid = hash::uuid_like("jb:fileaction");
     objects.push(file_action_object(&file_action_uid));
+    connected_uids.push(file_action_uid);
 
     let mut connections = Dictionary::new();
-    for uid in &search_uids {
+    for uid in &connected_uids {
         let mut destination = Dictionary::new();
         destination.insert(
             "destinationuid".to_string(),
@@ -185,9 +186,8 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
         );
     }
 
-    let mut all_uids = search_uids;
+    let mut all_uids = connected_uids;
     all_uids.push(action_uid);
-    all_uids.push(file_action_uid);
     let mut uidata = Dictionary::new();
     for (index, uid) in all_uids.iter().enumerate() {
         let mut position = Dictionary::new();
@@ -231,6 +231,7 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
         "webaddress".to_string(),
         Value::from("https://github.com/MrChang0/alfred-jetbrains"),
     );
+    root.insert("userconfigurationconfig".to_string(), user_configuration());
     root.insert("objects".to_string(), Value::Array(objects));
     root.insert("connections".to_string(), Value::Dictionary(connections));
     root.insert("uidata".to_string(), Value::Dictionary(uidata));
@@ -246,7 +247,7 @@ fn search_object(
     running_subtext: &str,
 ) -> Value {
     let mut config = Dictionary::new();
-    config.insert("alfredfiltersresults".to_string(), Value::from(true));
+    config.insert("alfredfiltersresults".to_string(), Value::from(false));
     config.insert("alfredfiltersresultsmatchmode".to_string(), Value::from(2));
     config.insert(
         "argumenttreatemptyqueryasnil".to_string(),
@@ -308,23 +309,138 @@ fn action_object(uid: &str) -> Value {
 
 fn file_action_object(uid: &str) -> Value {
     let mut config = Dictionary::new();
-    config.insert("acceptsdirectories".to_string(), Value::from(true));
-    config.insert("acceptsfiles".to_string(), Value::from(true));
-    config.insert("acceptsmultifiles".to_string(), Value::from(false));
-    config.insert("script".to_string(), Value::from("./bin/jb open \"$1\""));
-    config.insert("scriptargtype".to_string(), Value::from(1));
-    config.insert("scriptfile".to_string(), Value::from(""));
-    config.insert("type".to_string(), Value::from(8));
+    config.insert("acceptsmulti".to_string(), Value::from(0));
+    config.insert("filetypes".to_string(), Value::Array(Vec::new()));
+    config.insert("name".to_string(), Value::from("Open in JetBrains"));
 
     let mut object = Dictionary::new();
     object.insert("config".to_string(), Value::Dictionary(config));
     object.insert(
         "type".to_string(),
-        Value::from("alfred.workflow.input.fileaction"),
+        Value::from("alfred.workflow.trigger.action"),
     );
     object.insert("uid".to_string(), Value::String(uid.to_string()));
-    object.insert("version".to_string(), Value::from(3));
+    object.insert("version".to_string(), Value::from(1));
     Value::Dictionary(object)
+}
+
+fn user_configuration() -> Value {
+    Value::Array(vec![
+        text_config(
+            "jb_terminal",
+            "Terminal Application",
+            "Application opened by ⇧ and `jb terminal` (Ghostty, iTerm, Terminal, …)",
+            "Ghostty",
+        ),
+        text_config(
+            "jb_default_product",
+            "Default IDE",
+            "Product id used when `jb open` cannot infer one (idea, pycharm, …)",
+            "idea",
+        ),
+        checkbox_config(
+            "jb_show_stale",
+            "Show stale projects",
+            "Show projects whose directories no longer exist",
+            false,
+        ),
+        checkbox_config(
+            "jb_hide_worktrees",
+            "Hide linked worktrees",
+            "Hide worktrees from the normal list; they stay available under jb~",
+            true,
+        ),
+        popup_config(
+            "jb_sort",
+            "Sort order",
+            "Order of results before a query is typed",
+            "recent",
+            &[
+                ("Most recent", "recent"),
+                ("Least recent", "oldest"),
+                ("Name A–Z", "name"),
+                ("Name Z–A", "name-desc"),
+                ("Path", "path"),
+            ],
+        ),
+        textarea_config(
+            "jb_ignore",
+            "Ignore globs",
+            "One glob per line, matched against project name and path (e.g. ~/Downloads/* or *-scratch)",
+            "",
+        ),
+        text_config(
+            "jb_settings_roots",
+            "Settings roots",
+            "Colon-separated JetBrains settings roots",
+            "~/Library/Application Support/JetBrains:~/Library/Application Support/Google:~/Library/Preferences",
+        ),
+        text_config(
+            "jb_app_roots",
+            "Application roots",
+            "Colon-separated folders scanned for JetBrains .app bundles",
+            "/Applications:~/Applications:~/Applications/JetBrains Toolbox",
+        ),
+    ])
+}
+
+fn text_config(variable: &str, label: &str, description: &str, default: &str) -> Value {
+    let mut config = Dictionary::new();
+    config.insert("default".to_string(), Value::from(default));
+    config.insert("placeholder".to_string(), Value::from(default));
+    config.insert("required".to_string(), Value::from(false));
+    config.insert("trim".to_string(), Value::from(true));
+    user_config_entry(variable, "textfield", label, description, config)
+}
+
+fn checkbox_config(variable: &str, label: &str, description: &str, default: bool) -> Value {
+    let mut config = Dictionary::new();
+    config.insert("default".to_string(), Value::from(default));
+    config.insert("required".to_string(), Value::from(false));
+    config.insert("text".to_string(), Value::from(""));
+    user_config_entry(variable, "checkbox", label, description, config)
+}
+
+fn popup_config(
+    variable: &str,
+    label: &str,
+    description: &str,
+    default: &str,
+    pairs: &[(&str, &str)],
+) -> Value {
+    let mut config = Dictionary::new();
+    config.insert("default".to_string(), Value::from(default));
+    let pairs = pairs
+        .iter()
+        .map(|(label, value)| Value::Array(vec![Value::from(*label), Value::from(*value)]))
+        .collect::<Vec<_>>();
+    config.insert("pairs".to_string(), Value::Array(pairs));
+    user_config_entry(variable, "popupbutton", label, description, config)
+}
+
+fn textarea_config(variable: &str, label: &str, description: &str, default: &str) -> Value {
+    let mut config = Dictionary::new();
+    config.insert("default".to_string(), Value::from(default));
+    config.insert("required".to_string(), Value::from(false));
+    config.insert("trim".to_string(), Value::from(true));
+    config.insert("verticalsize".to_string(), Value::from(4));
+    user_config_entry(variable, "textarea", label, description, config)
+}
+
+fn user_config_entry(
+    variable: &str,
+    type_: &str,
+    label: &str,
+    description: &str,
+    config: Dictionary,
+) -> Value {
+    let mut entry = Dictionary::new();
+    entry.insert("variable".to_string(), Value::from(variable));
+    entry.insert("type".to_string(), Value::from(type_));
+    entry.insert("label".to_string(), Value::from(label));
+    entry.insert("description".to_string(), Value::from(description));
+    entry.insert("config".to_string(), Value::Dictionary(config));
+    Value::Dictionary(entry)
 }
 
 #[cfg(test)]
@@ -343,19 +459,18 @@ mod tests {
         assert!(objects.len() > 2);
         assert_eq!(
             objects.last().unwrap().as_dictionary().unwrap()["type"].as_string(),
-            Some("alfred.workflow.input.fileaction")
+            Some("alfred.workflow.trigger.action")
         );
         assert!(objects.iter().any(|object| {
             object.as_dictionary().unwrap()["type"].as_string()
                 == Some("alfred.workflow.action.script")
         }));
+        let file_action = objects.last().unwrap().as_dictionary().unwrap();
         assert_eq!(
-            objects.last().unwrap().as_dictionary().unwrap()["config"]
-                .as_dictionary()
-                .unwrap()["script"]
-                .as_string(),
-            Some("./bin/jb open \"$1\"")
+            file_action["config"].as_dictionary().unwrap()["name"].as_string(),
+            Some("Open in JetBrains")
         );
+        assert_eq!(file_action["version"].as_signed_integer(), Some(1));
 
         let find = |keyword: &str| {
             objects
@@ -377,6 +492,10 @@ mod tests {
             idea["config"].as_dictionary().unwrap()["script"].as_string(),
             Some("./bin/jb search --product idea --filter \"$1\"")
         );
+        assert_eq!(
+            idea["config"].as_dictionary().unwrap()["alfredfiltersresults"].as_boolean(),
+            Some(false)
+        );
         let jb_worktrees = find("jb~");
         assert_eq!(
             jb_worktrees["config"].as_dictionary().unwrap()["script"].as_string(),
@@ -393,15 +512,62 @@ mod tests {
             .map(|object| object.as_dictionary().unwrap())
             .find(|object| object["type"].as_string() == Some("alfred.workflow.action.script"))
             .expect("action object");
-        assert!(
-            action["config"].as_dictionary().unwrap()["script"]
-                .as_string()
-                .unwrap()
-                .contains("forget)")
-        );
+        let action_script = action["config"].as_dictionary().unwrap()["script"]
+            .as_string()
+            .unwrap();
+        assert!(action_script.contains("forget)"));
+        assert!(action_script.contains("./bin/jb open \"$project\""));
 
         let connections = dict["connections"].as_dictionary().unwrap();
-        assert_eq!(connections.len(), objects.len() - 2);
+        assert_eq!(connections.len(), objects.len() - 1);
+    }
+
+    #[test]
+    fn workflow_object_uids_are_unique() {
+        let value = workflow_value(&default_products());
+        let dict = value.as_dictionary().unwrap();
+        let objects = dict["objects"].as_array().unwrap();
+        let mut uids = std::collections::HashSet::new();
+        for object in objects {
+            let uid = object.as_dictionary().unwrap()["uid"]
+                .as_string()
+                .unwrap()
+                .to_string();
+            assert!(uids.insert(uid.clone()), "duplicate uid {uid}");
+        }
+        assert_eq!(uids.len(), objects.len());
+    }
+
+    #[test]
+    fn workflow_has_user_configuration() {
+        let value = workflow_value(&default_products());
+        let dict = value.as_dictionary().unwrap();
+        let items = dict["userconfigurationconfig"].as_array().unwrap();
+        assert_eq!(items.len(), 8);
+
+        let terminal = items
+            .iter()
+            .map(|item| item.as_dictionary().unwrap())
+            .find(|item| item["variable"].as_string() == Some("jb_terminal"))
+            .expect("jb_terminal");
+        assert_eq!(terminal["type"].as_string(), Some("textfield"));
+        assert_eq!(
+            terminal["config"].as_dictionary().unwrap()["default"].as_string(),
+            Some("Ghostty")
+        );
+        assert!(items.iter().any(|item| {
+            item.as_dictionary().unwrap()["variable"].as_string() == Some("jb_show_stale")
+        }));
+        let sort = items
+            .iter()
+            .map(|item| item.as_dictionary().unwrap())
+            .find(|item| item["variable"].as_string() == Some("jb_sort"))
+            .expect("jb_sort");
+        assert_eq!(sort["type"].as_string(), Some("popupbutton"));
+        assert_eq!(
+            sort["config"].as_dictionary().unwrap()["default"].as_string(),
+            Some("recent")
+        );
     }
 
     #[test]
@@ -424,6 +590,7 @@ mod tests {
             app_roots: vec![],
             show_stale: false,
             hide_worktrees: true,
+            sort: "recent".to_string(),
             cache_seconds: 60,
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "alfred-jetbrains-rust".to_string(),

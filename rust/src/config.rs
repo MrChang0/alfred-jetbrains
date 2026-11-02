@@ -25,6 +25,7 @@ pub struct Config {
     pub app_roots: Vec<PathBuf>,
     pub show_stale: bool,
     pub hide_worktrees: bool,
+    pub sort: String,
     pub cache_seconds: u64,
     pub pins_file: PathBuf,
     pub workflow_name: String,
@@ -41,6 +42,7 @@ struct ConfigFile {
     app_roots: Option<Vec<String>>,
     show_stale: Option<bool>,
     hide_worktrees: Option<bool>,
+    sort: Option<String>,
     cache_seconds: Option<u64>,
     pins_file: Option<String>,
     workflow_name: Option<String>,
@@ -76,18 +78,25 @@ impl Config {
             ConfigFile::default()
         };
 
-        let settings_roots = file
+        let mut settings_roots: Vec<PathBuf> = file
             .settings_roots
             .unwrap_or_else(default_settings_roots)
             .into_iter()
             .map(|path| expand_path(&path))
             .collect();
-        let app_roots = file
+        if let Some(value) = env_override("jb_settings_roots") {
+            settings_roots = value.split(':').map(expand_path).collect();
+        }
+
+        let mut app_roots: Vec<PathBuf> = file
             .app_roots
             .unwrap_or_else(default_app_roots)
             .into_iter()
             .map(|path| expand_path(&path))
             .collect();
+        if let Some(value) = env_override("jb_app_roots") {
+            app_roots = value.split(':').map(expand_path).collect();
+        }
 
         let pins_file = expand_path(
             file.pins_file
@@ -100,20 +109,42 @@ impl Config {
             .map(|product| merge_product(product, file.products.get(product.id)))
             .collect();
 
+        let mut ignore = file.ignore.unwrap_or_default();
+        if let Some(value) = env_override("jb_ignore") {
+            ignore.extend(
+                value
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(ToString::to_string),
+            );
+        }
+
         Ok(Self {
             config_path,
             settings_roots,
             app_roots,
-            show_stale: file.show_stale.unwrap_or(false),
-            hide_worktrees: file.hide_worktrees.unwrap_or(true),
-            cache_seconds: file.cache_seconds.unwrap_or(60),
+            show_stale: env_bool("jb_show_stale")
+                .or(file.show_stale)
+                .unwrap_or(false),
+            hide_worktrees: env_bool("jb_hide_worktrees")
+                .or(file.hide_worktrees)
+                .unwrap_or(true),
+            sort: env_override("jb_sort")
+                .or(file.sort)
+                .unwrap_or_else(|| "recent".to_string()),
+            cache_seconds: file.cache_seconds.unwrap_or(0),
             pins_file,
             workflow_name: file
                 .workflow_name
                 .unwrap_or_else(|| "alfred-jetbrains-rust".to_string()),
-            default_product: file.default_product.unwrap_or_else(|| "idea".to_string()),
-            terminal: file.terminal.unwrap_or_else(|| "Terminal".to_string()),
-            ignore: file.ignore.unwrap_or_default(),
+            default_product: env_override("jb_default_product")
+                .or(file.default_product)
+                .unwrap_or_else(|| "idea".to_string()),
+            terminal: env_override("jb_terminal")
+                .or(file.terminal)
+                .unwrap_or_else(|| "Terminal".to_string()),
+            ignore,
             forgotten_file: expand_path(
                 file.forgotten_file
                     .as_deref()
@@ -217,6 +248,23 @@ fn default_app_roots() -> Vec<String> {
         "~/Applications".to_string(),
         "~/Applications/JetBrains Toolbox".to_string(),
     ]
+}
+
+fn env_override(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn env_bool(name: &str) -> Option<bool> {
+    env::var(name)
+        .ok()
+        .and_then(|value| match value.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => Some(true),
+            "0" | "false" | "no" | "off" => Some(false),
+            _ => None,
+        })
 }
 
 #[cfg(test)]

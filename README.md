@@ -13,6 +13,8 @@ installed IDE and every installed version.
 - **Stale filtering** — hides projects whose directories no longer exist
   (`--show-stale` to include them); pinned projects are always shown
 - **Pins** — favorite projects stay at the top with `★`
+- **Fuzzy search** — `pngln` matches `pangolin`
+- **Sort options** — most recent, least recent, name A–Z/Z–A, path
 - **Correct IDE/version** — opens the project in the IDE that last used it
 - **Product scoping** — `jb idea pangolin`, `jb pycharm foo`, `jb webstorm bar`
 - **Open anything** — `jb .` after `cd` infers the IDE from project files; the
@@ -110,6 +112,24 @@ Ignored and forgotten projects are hidden even when pinned.
 
 ## Configuration
 
+### Change settings in Alfred
+
+Open **Alfred Preferences → Workflows → JetBrains Projects (Rust) →
+Configure Workflow**. The page exposes:
+
+- **Terminal Application** (default `Ghostty`)
+- **Default IDE** (fallback for `jb open` / File Action)
+- **Show stale projects**
+- **Hide linked worktrees**
+- **Sort order** (recent/oldest/name/path)
+- **Ignore globs** (one per line)
+- **Settings roots** and **Application roots**
+
+These values are passed to the CLI as `jb_*` environment variables and take
+precedence over the TOML file when the workflow runs from Alfred.
+
+### TOML config
+
 The config file is `~/.config/alfred-jetbrains/config.toml` (override with
 `JB_CONFIG`):
 
@@ -126,7 +146,8 @@ app_roots = [
 ]
 show_stale = false
 hide_worktrees = true
-cache_seconds = 60
+sort = "recent"
+cache_seconds = 0   # 0 disables Alfred result caching
 pins_file = "~/.config/alfred-jetbrains/pins.json"
 workflow_name = "alfred-jetbrains-rust"
 default_product = "idea"

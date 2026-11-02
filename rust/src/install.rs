@@ -19,6 +19,7 @@ const ACTION_SCRIPT: &str = r#"project="${1:-$jb_path}"
 action="${jb_action:-open}"
 case "$action" in
   pin) ./bin/jb toggle-pin "$project" ;;
+  terminal) ./bin/jb terminal "$project" ;;
   reveal) /usr/bin/open -R "$project" ;;
   copy) printf '%s' "$project" | /usr/bin/pbcopy ;;
   *)
@@ -216,8 +217,8 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
              `datagrip`, `dataspell`, `rider`, `rubymine`, `rustrover`, \
              `fleet`, `aqua`, `appcode`, or `writerside`. Add `~` to see linked \
              git worktrees (`jb~`, `idea~`). Hold ⌘ to pin/unpin, ⌥ to reveal in \
-             Finder, and ⌃ to copy the path. You can also select any folder in \
-             Alfred or Finder and use Open in JetBrains.",
+             Finder, ⌃ to copy the path, and ⇧ to open a terminal. You can also \
+             select any folder in Alfred or Finder and use Open in JetBrains.",
         ),
     );
     root.insert(
@@ -413,6 +414,7 @@ mod tests {
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "alfred-jetbrains-rust".to_string(),
             default_product: "idea".to_string(),
+            terminal: "Terminal".to_string(),
             products: default_products(),
         };
 

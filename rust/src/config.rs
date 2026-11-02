@@ -29,6 +29,7 @@ pub struct Config {
     pub pins_file: PathBuf,
     pub workflow_name: String,
     pub default_product: String,
+    pub terminal: String,
     pub products: Vec<ProductConfig>,
 }
 
@@ -42,6 +43,7 @@ struct ConfigFile {
     pins_file: Option<String>,
     workflow_name: Option<String>,
     default_product: Option<String>,
+    terminal: Option<String>,
     #[serde(default)]
     products: HashMap<String, ProductOverride>,
 }
@@ -106,6 +108,7 @@ impl Config {
                 .workflow_name
                 .unwrap_or_else(|| "alfred-jetbrains-rust".to_string()),
             default_product: file.default_product.unwrap_or_else(|| "idea".to_string()),
+            terminal: file.terminal.unwrap_or_else(|| "Terminal".to_string()),
             products,
         })
     }

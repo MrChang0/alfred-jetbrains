@@ -140,6 +140,7 @@ fn config_prints_effective_settings() {
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["show_stale"], false);
+    assert_eq!(json["terminal"], "Terminal");
     assert!(
         json["settings_roots"]
             .as_array()
@@ -147,6 +148,26 @@ fn config_prints_effective_settings() {
             .iter()
             .any(|path| path.as_str().unwrap().ends_with("JetBrains"))
     );
+}
+
+#[test]
+fn doctor_reports_settings_and_projects() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path();
+    write_fixture(home);
+    let config = home.join("config.toml");
+
+    let output = run(home, &config, &["doctor"]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("settings roots:"));
+    assert!(text.contains("settings dirs:"));
+    assert!(text.contains("projects:"));
+    assert!(text.contains("terminal: Terminal"));
 }
 
 #[test]

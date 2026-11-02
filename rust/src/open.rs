@@ -57,6 +57,17 @@ pub fn open(config: &Config, options: OpenOptions) -> Result<()> {
     Ok(())
 }
 
+pub fn open_terminal(config: &Config, path: &Path) -> Result<()> {
+    let path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    Command::new("/usr/bin/open")
+        .arg("-a")
+        .arg(&config.terminal)
+        .arg(&path)
+        .spawn()
+        .with_context(|| format!("open terminal '{}' at {}", config.terminal, path.display()))?;
+    Ok(())
+}
+
 pub fn resolve_target(
     config: &Config,
     path: &Path,
@@ -247,6 +258,7 @@ mod tests {
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
+            terminal: "Terminal".to_string(),
             products: default_products(),
         };
 
@@ -298,6 +310,7 @@ mod tests {
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
+            terminal: "Terminal".to_string(),
             products: default_products(),
         };
 
@@ -326,6 +339,7 @@ mod tests {
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "test".to_string(),
             default_product: "pycharm".to_string(),
+            terminal: "Terminal".to_string(),
             products: default_products(),
         };
 
@@ -349,6 +363,7 @@ mod tests {
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
+            terminal: "Terminal".to_string(),
             products: default_products(),
         };
         let target = resolve_target(&config, temp.path(), None, None, Some(bin.clone())).unwrap();
@@ -367,6 +382,7 @@ mod tests {
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
+            terminal: "Terminal".to_string(),
             products: default_products(),
         };
         let error =

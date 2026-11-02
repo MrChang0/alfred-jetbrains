@@ -137,6 +137,8 @@ impl Item {
                 Some(branch) => format!("worktree: {branch}"),
                 None => "worktree".to_string(),
             });
+        } else if let Some(branch) = &entry.branch {
+            subtitle_parts.push(format!("branch: {branch}"));
         }
         if entry.app.is_none() && entry.bin.is_none() {
             subtitle_parts.push("IDE not found".to_string());
@@ -221,6 +223,10 @@ impl Item {
         mods.insert("cmd".to_string(), modifier("Pin/Unpin", "pin"));
         mods.insert("alt".to_string(), modifier("Reveal in Finder", "reveal"));
         mods.insert("ctrl".to_string(), modifier("Copy path", "copy"));
+        mods.insert(
+            "shift".to_string(),
+            modifier("Open in Terminal", "terminal"),
+        );
 
         Self {
             uid: format!("{:016x}", fnv1a(&entry.key)),
@@ -292,6 +298,7 @@ mod tests {
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
+            terminal: "Terminal".to_string(),
             products: default_products(),
         }
     }
@@ -320,6 +327,15 @@ mod tests {
             is_worktree: false,
             branch: None,
         }
+    }
+
+    #[test]
+    fn normal_entry_shows_branch() {
+        let mut entry = entry("alpha", false, false);
+        entry.branch = Some("main".to_string());
+        let item = Item::from_entry(&entry);
+        assert!(item.subtitle.contains("branch: main"));
+        assert_eq!(item.variables.unwrap()["jb_branch"], "main");
     }
 
     #[test]

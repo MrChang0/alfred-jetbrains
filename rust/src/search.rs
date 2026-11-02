@@ -155,6 +155,7 @@ mod tests {
             pins_file,
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
+            terminal: "Terminal".to_string(),
             products: default_products(),
         }
     }

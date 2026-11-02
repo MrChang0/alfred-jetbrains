@@ -19,7 +19,11 @@ installed IDE and every installed version.
   Alfred **Open in JetBrains** File Action works on any folder
 - **Git worktrees** — `jb~` / `idea~` list linked worktrees with their branches;
   they are hidden from the normal project list
-- **Alfred modifiers** — `⌘` pin/unpin, `⌥` reveal in Finder, `⌃` copy path
+- **Git branch** — shown in the subtitle for every git checkout
+- **Terminal & diagnostics** — `⇧` opens a terminal; `jb doctor` prints what
+  the CLI sees
+- **Alfred modifiers** — `⌘` pin/unpin, `⌥` reveal in Finder, `⌃` copy path,
+  `⇧` open in Terminal
 
 ## Requirements
 
@@ -80,7 +84,8 @@ Use `--product` to override, or set `default_product` in the config.
 In Alfred or Finder, select any folder and run the **Open in JetBrains** File
 Action for the same behavior.
 
-Hold `⌘` to pin/unpin, `⌥` to reveal in Finder, `⌃` to copy the path.
+Hold `⌘` to pin/unpin, `⌥` to reveal in Finder, `⌃` to copy the path, and
+`⇧` to open the project in your terminal.
 
 ## Configuration
 
@@ -104,6 +109,7 @@ cache_seconds = 60
 pins_file = "~/.config/alfred-jetbrains/pins.json"
 workflow_name = "alfred-jetbrains-rust"
 default_product = "idea"
+terminal = "Terminal"
 
 [products.idea]
 preference_prefix = "IntelliJIdea"
@@ -115,6 +121,16 @@ keywords = ["idea", "ij"]
 `jb config` prints the effective configuration. See
 [`rust/README.md`](rust/README.md) for discovery details and the full command
 list.
+
+## Diagnostics
+
+```shell
+jb doctor
+```
+
+Prints the settings roots and version directories it found, the installed
+JetBrains apps it matched, project/worktree/stale/pin counts, the terminal
+setting, and whether the Alfred workflow is installed.
 
 ## Development
 

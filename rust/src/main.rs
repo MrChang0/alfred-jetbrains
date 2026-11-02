@@ -1,6 +1,7 @@
 mod alfred;
 mod config;
 mod discovery;
+mod doctor;
 mod hash;
 mod install;
 mod logging;
@@ -69,6 +70,15 @@ enum Commands {
         #[arg(long)]
         bin: Option<PathBuf>,
     },
+
+    /// Open a project directory in the configured terminal.
+    Terminal {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
+
+    /// Print diagnostics about settings, apps, and projects.
+    Doctor,
 
     /// Pin a project.
     Pin { path: PathBuf },
@@ -159,6 +169,12 @@ fn run() -> Result<()> {
                 },
             )?;
         }
+        Commands::Terminal { path } => {
+            open::open_terminal(&config, &path)?;
+        }
+        Commands::Doctor => {
+            println!("{}", doctor::run(&config)?);
+        }
         Commands::Pin { path } => {
             let added = pins::pin(&config.pins_file, &path)?;
             println!("{}", if added { "pinned" } else { "already pinned" });
@@ -227,6 +243,8 @@ fn is_subcommand(value: &str) -> bool {
         value,
         "search"
             | "open"
+            | "terminal"
+            | "doctor"
             | "pin"
             | "unpin"
             | "toggle-pin"

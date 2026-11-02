@@ -56,6 +56,8 @@ in each product's `keywords` list (`idea`, `pycharm`, `pstorm`, `wstorm`,
 jb search [--product <id>] [--filter <text>] [--show-stale] [--worktrees]
 jb open [path] [--product <id>] [--app <app>] [--bin <bin>]
 jb <path>                     # shorthand for `jb open <path>`
+jb terminal [path]            # open a directory in the configured terminal
+jb doctor                     # print discovery diagnostics
 jb pin <path>
 jb unpin <path>
 jb toggle-pin <path>
@@ -115,6 +117,7 @@ cache_seconds = 60
 pins_file = "~/.config/alfred-jetbrains/pins.json"
 workflow_name = "alfred-jetbrains-rust"
 default_product = "idea"
+terminal = "Terminal"
 
 [products.idea]
 preference_prefix = "IntelliJIdea"
@@ -124,6 +127,23 @@ keywords = ["idea", "ij"]
 ```
 
 Pins are stored as a JSON array of absolute paths in `pins_file`.
+
+## Modifiers
+
+- `⌘` pin/unpin
+- `⌥` reveal in Finder
+- `⌃` copy the project path
+- `⇧` open the project in `terminal`
+
+## Diagnostics
+
+```shell
+jb doctor
+```
+
+Prints settings roots and product/version directories, matched application
+bundles, project/worktree/stale/pin counts, the terminal setting, and the
+installed workflow status.
 
 ## Git worktrees
 
@@ -145,7 +165,8 @@ directories. The normal project list hides linked worktrees by default; set
 3. Entries carry `projectOpenTimestamp`/`activationTimestamp`, so the same
    project opened in multiple products or versions keeps its most recent IDE.
 4. Missing project directories are hidden unless `--show-stale` (or
-   `show_stale = true`) is used; pinned projects are always shown.
+   `show_stale = true`) is used; pinned projects are always shown. The current
+   git branch is shown for projects and worktrees.
 5. The IDE application is matched by product name and, when present, by the
    settings version. The app's `Contents/MacOS` binary is preferred, then
    `JB_BINARIES`/`PATH`.

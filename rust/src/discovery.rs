@@ -107,7 +107,7 @@ pub fn discover(config: &Config) -> Vec<ProjectEntry> {
                     bin,
                     pinned: false,
                     is_worktree,
-                    branch: is_worktree.then(|| worktree::branch_for(&path)).flatten(),
+                    branch: worktree::branch_for(&path),
                 });
             }
         }
@@ -200,6 +200,33 @@ pub fn worktree_entries(entries: &[ProjectEntry]) -> Vec<ProjectEntry> {
     }
 
     result.into_values().collect()
+}
+
+/// All product/version settings directories found under the configured roots.
+pub fn settings_dirs(config: &Config) -> Vec<(ProductConfig, PathBuf, Option<String>)> {
+    let version_re =
+        Regex::new(r"^(?:\d{4}\.\d(?:\.\d)?|\d\.\d(?:\.\d)?)$").expect("valid version regex");
+    let mut result = Vec::new();
+    for product in &config.products {
+        for (path, version) in find_settings_dirs(config, product, &version_re) {
+            result.push((product.clone(), path, version));
+        }
+    }
+    result
+}
+
+/// Best installed application bundle for every product that has one.
+pub fn product_apps(config: &Config) -> Vec<(String, PathBuf)> {
+    let index = build_app_index(config);
+    config
+        .products
+        .iter()
+        .filter_map(|product| {
+            index
+                .find(product, None)
+                .map(|path| (product.name.clone(), path.to_path_buf()))
+        })
+        .collect()
 }
 
 fn find_settings_dirs(
@@ -498,6 +525,7 @@ mod tests {
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "test".to_string(),
             default_product: "idea".to_string(),
+            terminal: "Terminal".to_string(),
             products: default_products(),
         }
     }

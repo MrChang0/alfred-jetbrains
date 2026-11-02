@@ -109,6 +109,17 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
     ));
     search_uids.push(global_uid);
 
+    let global_worktree_uid = hash::uuid_like("jb:search:worktrees:all");
+    objects.push(search_object(
+        &global_worktree_uid,
+        "jb~",
+        "./bin/jb search --worktrees --filter \"$1\"",
+        "JetBrains Worktrees",
+        "Open a git worktree",
+        "searching worktrees",
+    ));
+    search_uids.push(global_worktree_uid);
+
     for product in products {
         let Some(keyword) = product
             .keywords
@@ -134,9 +145,27 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
             &format!("searching {} projects", product.name),
         ));
         search_uids.push(uid);
+
+        let worktree_uid = hash::uuid_like(&format!("jb:search:{keyword}:worktrees"));
+        let worktree_script = format!(
+            "./bin/jb search --product {} --worktrees --filter \"$1\"",
+            product.id
+        );
+        objects.push(search_object(
+            &worktree_uid,
+            &format!("{keyword}~"),
+            &worktree_script,
+            &format!("{} Worktrees", product.name),
+            &format!("Open {} worktree", product.name),
+            &format!("searching {} worktrees", product.name),
+        ));
+        search_uids.push(worktree_uid);
     }
 
     objects.push(action_object(&action_uid));
+
+    let file_action_uid = hash::uuid_like("jb:fileaction");
+    objects.push(file_action_object(&file_action_uid));
 
     let mut connections = Dictionary::new();
     for uid in &search_uids {
@@ -156,6 +185,7 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
 
     let mut all_uids = search_uids;
     all_uids.push(action_uid);
+    all_uids.push(file_action_uid);
     let mut uidata = Dictionary::new();
     for (index, uid) in all_uids.iter().enumerate() {
         let mut position = Dictionary::new();
@@ -184,8 +214,10 @@ pub fn workflow_value(products: &[ProductConfig]) -> Value {
              Type `jb` for all projects, or a product keyword such as `idea`, \
              `pycharm`, `pstorm`, `wstorm`, `studio`, `clion`, `goland`, \
              `datagrip`, `dataspell`, `rider`, `rubymine`, `rustrover`, \
-             `fleet`, `aqua`, `appcode`, or `writerside`. Hold ⌘ to pin/unpin, \
-             ⌥ to reveal in Finder, and ⌃ to copy the path.",
+             `fleet`, `aqua`, `appcode`, or `writerside`. Add `~` to see linked \
+             git worktrees (`jb~`, `idea~`). Hold ⌘ to pin/unpin, ⌥ to reveal in \
+             Finder, and ⌃ to copy the path. You can also select any folder in \
+             Alfred or Finder and use Open in JetBrains.",
         ),
     );
     root.insert(
@@ -271,6 +303,27 @@ fn action_object(uid: &str) -> Value {
     Value::Dictionary(object)
 }
 
+fn file_action_object(uid: &str) -> Value {
+    let mut config = Dictionary::new();
+    config.insert("acceptsdirectories".to_string(), Value::from(true));
+    config.insert("acceptsfiles".to_string(), Value::from(true));
+    config.insert("acceptsmultifiles".to_string(), Value::from(false));
+    config.insert("script".to_string(), Value::from("./bin/jb open \"$1\""));
+    config.insert("scriptargtype".to_string(), Value::from(1));
+    config.insert("scriptfile".to_string(), Value::from(""));
+    config.insert("type".to_string(), Value::from(8));
+
+    let mut object = Dictionary::new();
+    object.insert("config".to_string(), Value::Dictionary(config));
+    object.insert(
+        "type".to_string(),
+        Value::from("alfred.workflow.input.fileaction"),
+    );
+    object.insert("uid".to_string(), Value::String(uid.to_string()));
+    object.insert("version".to_string(), Value::from(3));
+    Value::Dictionary(object)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,23 +340,53 @@ mod tests {
         assert!(objects.len() > 2);
         assert_eq!(
             objects.last().unwrap().as_dictionary().unwrap()["type"].as_string(),
-            Some("alfred.workflow.action.script")
+            Some("alfred.workflow.input.fileaction")
+        );
+        assert!(objects.iter().any(|object| {
+            object.as_dictionary().unwrap()["type"].as_string()
+                == Some("alfred.workflow.action.script")
+        }));
+        assert_eq!(
+            objects.last().unwrap().as_dictionary().unwrap()["config"]
+                .as_dictionary()
+                .unwrap()["script"]
+                .as_string(),
+            Some("./bin/jb open \"$1\"")
         );
 
-        let idea = objects
-            .iter()
-            .map(|object| object.as_dictionary().unwrap())
-            .find(|object| {
-                object["config"].as_dictionary().unwrap()["keyword"].as_string() == Some("idea")
-            })
-            .expect("idea keyword");
+        let find = |keyword: &str| {
+            objects
+                .iter()
+                .map(|object| object.as_dictionary().unwrap())
+                .find(|object| {
+                    object["config"]
+                        .as_dictionary()
+                        .unwrap()
+                        .get("keyword")
+                        .and_then(|value| value.as_string())
+                        == Some(keyword)
+                })
+                .unwrap_or_else(|| panic!("missing keyword {keyword}"))
+        };
+
+        let idea = find("idea");
         assert_eq!(
             idea["config"].as_dictionary().unwrap()["script"].as_string(),
             Some("./bin/jb search --product idea --filter \"$1\"")
         );
+        let jb_worktrees = find("jb~");
+        assert_eq!(
+            jb_worktrees["config"].as_dictionary().unwrap()["script"].as_string(),
+            Some("./bin/jb search --worktrees --filter \"$1\"")
+        );
+        let idea_worktrees = find("idea~");
+        assert_eq!(
+            idea_worktrees["config"].as_dictionary().unwrap()["script"].as_string(),
+            Some("./bin/jb search --product idea --worktrees --filter \"$1\"")
+        );
 
         let connections = dict["connections"].as_dictionary().unwrap();
-        assert_eq!(connections.len(), objects.len() - 1);
+        assert_eq!(connections.len(), objects.len() - 2);
     }
 
     #[test]
@@ -325,9 +408,11 @@ mod tests {
             settings_roots: vec![],
             app_roots: vec![],
             show_stale: false,
+            hide_worktrees: true,
             cache_seconds: 60,
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "alfred-jetbrains-rust".to_string(),
+            default_product: "idea".to_string(),
             products: default_products(),
         };
 

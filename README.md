@@ -15,6 +15,10 @@ installed IDE and every installed version.
 - **Pins** — favorite projects stay at the top with `★`
 - **Correct IDE/version** — opens the project in the IDE that last used it
 - **Product scoping** — `jb idea pangolin`, `jb pycharm foo`, `jb webstorm bar`
+- **Open anything** — `jb .` after `cd` infers the IDE from project files; the
+  Alfred **Open in JetBrains** File Action works on any folder
+- **Git worktrees** — `jb~` / `idea~` list linked worktrees with their branches;
+  they are hidden from the normal project list
 - **Alfred modifiers** — `⌘` pin/unpin, `⌥` reveal in Finder, `⌃` copy path
 
 ## Requirements
@@ -49,6 +53,33 @@ directly:
 
 `jb idea <name>` also works if you prefer the global keyword.
 
+Add `~` to list linked git worktrees instead of recent projects:
+
+- `jb~` — all worktrees
+- `idea~`, `pycharm~`, … — worktrees of one product
+
+Worktrees are discovered from your recent project repositories by reading
+Git's own `.git/worktrees/*/gitdir` files; no directory scanning and no `git`
+process. The normal list hides linked worktrees (set `hide_worktrees = false`
+to include them).
+
+### Open a fresh clone
+
+```shell
+git clone <repo>
+cd <repo>
+jb .
+```
+
+`jb .` / `jb open .` infers the IDE from project files: `pom.xml` or Gradle →
+IntelliJ IDEA, `pyproject.toml` → PyCharm, `package.json` → WebStorm, `go.mod`
+→ GoLand, `Cargo.toml` → RustRover, `*.sln`/`*.csproj` → Rider,
+`composer.json` → PhpStorm, `Gemfile` → RubyMine, `CMakeLists.txt` → CLion.
+Use `--product` to override, or set `default_product` in the config.
+
+In Alfred or Finder, select any folder and run the **Open in JetBrains** File
+Action for the same behavior.
+
 Hold `⌘` to pin/unpin, `⌥` to reveal in Finder, `⌃` to copy the path.
 
 ## Configuration
@@ -68,9 +99,11 @@ app_roots = [
   "~/Applications/JetBrains Toolbox",
 ]
 show_stale = false
+hide_worktrees = true
 cache_seconds = 60
 pins_file = "~/.config/alfred-jetbrains/pins.json"
 workflow_name = "alfred-jetbrains-rust"
+default_product = "idea"
 
 [products.idea]
 preference_prefix = "IntelliJIdea"

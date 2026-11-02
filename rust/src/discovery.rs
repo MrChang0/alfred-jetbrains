@@ -14,6 +14,7 @@ use crate::{
     config::{Config, ProductConfig},
     logging,
     projects::{dedupe_key, expand_project_path, is_internal_key, project_name},
+    worktree,
     xml::{self, RawEntry},
 };
 
@@ -32,6 +33,8 @@ pub struct ProjectEntry {
     pub bin: Option<PathBuf>,
     pub pinned: bool,
     pub stale: bool,
+    pub is_worktree: bool,
+    pub branch: Option<String>,
 }
 
 pub struct AppIndex {
@@ -88,11 +91,12 @@ pub fn discover(config: &Config) -> Vec<ProjectEntry> {
                     })
                     .clone();
 
+                let is_worktree = worktree::is_linked_worktree(&path);
                 entries.push(ProjectEntry {
                     key,
                     name: project_name(&path),
                     stale: !path.exists(),
-                    path,
+                    path: path.clone(),
                     product: product.clone(),
                     version: version.clone(),
                     open_timestamp: raw.open_timestamp,
@@ -102,6 +106,8 @@ pub fn discover(config: &Config) -> Vec<ProjectEntry> {
                     app,
                     bin,
                     pinned: false,
+                    is_worktree,
+                    branch: is_worktree.then(|| worktree::branch_for(&path)).flatten(),
                 });
             }
         }
@@ -123,6 +129,77 @@ pub fn dedupe(entries: Vec<ProjectEntry>) -> Vec<ProjectEntry> {
         }
     }
     by_key.into_values().collect()
+}
+
+/// Derive linked worktrees from the repositories of the given entries. This
+/// reads `.git/worktrees/*/gitdir`, so it does not run `git` or scan unknown
+/// directories.
+pub fn worktree_entries(entries: &[ProjectEntry]) -> Vec<ProjectEntry> {
+    let mut main_roots = Vec::new();
+    let mut seen_roots = HashSet::new();
+    for entry in entries {
+        if let Some(info) = worktree::repo_info(&entry.path)
+            && seen_roots.insert(info.main_root.clone())
+        {
+            main_roots.push(info.main_root);
+        }
+    }
+
+    let mut result: HashMap<String, ProjectEntry> = HashMap::new();
+    for main_root in main_roots {
+        let base = entries
+            .iter()
+            .filter(|entry| {
+                worktree::repo_info(&entry.path).is_some_and(|info| info.main_root == main_root)
+            })
+            .max_by_key(|entry| entry.open_timestamp.unwrap_or(i64::MIN));
+        let Some(base) = base else {
+            continue;
+        };
+
+        let base_name = if main_root.exists() {
+            project_name(&main_root)
+        } else {
+            base.name.clone()
+        };
+
+        for path in worktree::linked_worktrees(&main_root) {
+            let branch = worktree::branch_for(&path);
+            let name = match &branch {
+                Some(branch) => format!("{base_name} ({branch})"),
+                None => format!("{base_name} (worktree)"),
+            };
+            let key = dedupe_key(&path);
+            let entry = ProjectEntry {
+                key: key.clone(),
+                path: path.clone(),
+                name,
+                product: base.product.clone(),
+                version: base.version.clone(),
+                open_timestamp: base.open_timestamp,
+                activation_timestamp: base.activation_timestamp,
+                build: base.build.clone(),
+                production_code: base.production_code.clone(),
+                app: base.app.clone(),
+                bin: base.bin.clone(),
+                pinned: false,
+                stale: !path.exists(),
+                is_worktree: true,
+                branch,
+            };
+
+            match result.get(&key) {
+                Some(existing)
+                    if existing.open_timestamp.unwrap_or(0)
+                        >= entry.open_timestamp.unwrap_or(0) => {}
+                _ => {
+                    result.insert(key, entry);
+                }
+            }
+        }
+    }
+
+    result.into_values().collect()
 }
 
 fn find_settings_dirs(
@@ -416,9 +493,11 @@ mod tests {
             settings_roots: vec![settings.to_path_buf()],
             app_roots: vec![apps.to_path_buf()],
             show_stale: false,
+            hide_worktrees: true,
             cache_seconds: 60,
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "test".to_string(),
+            default_product: "idea".to_string(),
             products: default_products(),
         }
     }

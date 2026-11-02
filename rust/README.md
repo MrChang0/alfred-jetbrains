@@ -53,8 +53,9 @@ in each product's `keywords` list (`idea`, `pycharm`, `pstorm`, `wstorm`,
 ## Commands
 
 ```
-jb search [--product <id>] [--filter <text>] [--show-stale]
-jb open <path> [--product <id>] [--app <app>] [--bin <bin>]
+jb search [--product <id>] [--filter <text>] [--show-stale] [--worktrees]
+jb open [path] [--product <id>] [--app <app>] [--bin <bin>]
+jb <path>                     # shorthand for `jb open <path>`
 jb pin <path>
 jb unpin <path>
 jb toggle-pin <path>
@@ -66,6 +67,31 @@ jb version
 
 A leading product token in `--filter` is consumed, so `jb idea pangolin` scopes
 to IntelliJ IDEA. `jb config` prints the effective configuration.
+
+`jb open` defaults to the current directory, so after cloning a repository:
+
+```shell
+cd my-new-repo
+jb .
+```
+
+The IDE is inferred from project files:
+
+| Marker | Product |
+|---|---|
+| `pom.xml`, `build.gradle[.kts]`, `settings.gradle[.kts]` | IntelliJ IDEA |
+| `pyproject.toml`, `requirements.txt`, `setup.py`, `Pipfile` | PyCharm |
+| `package.json` | WebStorm |
+| `go.mod` | GoLand |
+| `Cargo.toml` | RustRover |
+| `composer.json` | PhpStorm |
+| `Gemfile` | RubyMine |
+| `CMakeLists.txt` | CLion |
+| `*.sln`, `*.csproj` | Rider |
+
+If nothing matches, `default_product` (default `idea`) is used. Override with
+`--product`. The same inference backs the workflow's **Open in JetBrains** File
+Action, so you can select any folder in Alfred or Finder.
 
 ## Configuration
 
@@ -84,9 +110,11 @@ app_roots = [
   "~/Applications/JetBrains Toolbox",
 ]
 show_stale = false
+hide_worktrees = true
 cache_seconds = 60
 pins_file = "~/.config/alfred-jetbrains/pins.json"
 workflow_name = "alfred-jetbrains-rust"
+default_product = "idea"
 
 [products.idea]
 preference_prefix = "IntelliJIdea"
@@ -96,6 +124,17 @@ keywords = ["idea", "ij"]
 ```
 
 Pins are stored as a JSON array of absolute paths in `pins_file`.
+
+## Git worktrees
+
+`jb search --worktrees` lists linked worktrees instead of recent projects.
+The workflow exposes this as `jb~` and `<product>~` (`idea~`, `pycharm~`, …).
+Each result shows the worktree branch in its subtitle.
+
+Worktrees are derived from the repositories of recent projects by reading
+`<repo>/.git/worktrees/*/gitdir`; this does not run `git` or scan unrelated
+directories. The normal project list hides linked worktrees by default; set
+`hide_worktrees = false` to keep them in the main list as well.
 
 ## How discovery works
 

@@ -13,6 +13,7 @@ pub struct SearchOptions {
     pub product: Option<String>,
     pub filter: String,
     pub show_stale: bool,
+    pub worktrees: bool,
 }
 
 pub fn search(config: &Config, options: SearchOptions) -> Result<AlfredResponse> {
@@ -28,6 +29,15 @@ pub fn search(config: &Config, options: SearchOptions) -> Result<AlfredResponse>
     let mut entries = discovery::discover(config);
     for entry in &mut entries {
         entry.pinned = pin_keys.contains(&entry.key);
+    }
+
+    if options.worktrees {
+        entries = discovery::worktree_entries(&entries);
+        for entry in &mut entries {
+            entry.pinned = pin_keys.contains(&entry.key);
+        }
+    } else if config.hide_worktrees {
+        entries.retain(|entry| !entry.is_worktree);
     }
 
     if let Some(product_id) = &product_id {
@@ -59,6 +69,13 @@ pub fn search(config: &Config, options: SearchOptions) -> Result<AlfredResponse>
     });
 
     if entries.is_empty() && filter.is_empty() {
+        if options.worktrees {
+            return Ok(alfred::info_response(
+                config,
+                "No git worktrees found",
+                "Worktrees are discovered from your recent project repositories",
+            ));
+        }
         let subtitle = match &product_id {
             Some(product) => format!("No recent projects found for {product}"),
             None => format!(
@@ -133,9 +150,11 @@ mod tests {
             settings_roots: vec![settings],
             app_roots: vec![apps],
             show_stale: false,
+            hide_worktrees: true,
             cache_seconds: 60,
             pins_file,
             workflow_name: "test".to_string(),
+            default_product: "idea".to_string(),
             products: default_products(),
         }
     }
@@ -181,6 +200,87 @@ mod tests {
         (temp, config)
     }
 
+    fn worktree_fixture() -> (tempfile::TempDir, Config) {
+        let temp = tempdir().unwrap();
+        let settings = temp.path().join("JetBrains");
+        let apps = temp.path().join("Applications");
+        let main = temp.path().join("projects/main");
+        fs::create_dir_all(&main).unwrap();
+        fs::write(main.join("pom.xml"), "").unwrap();
+        let common = main.join(".git");
+        let worktree_git = common.join("worktrees/feature");
+        fs::create_dir_all(&worktree_git).unwrap();
+        fs::write(common.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let worktree = temp.path().join("projects/main-feature");
+        fs::create_dir_all(&worktree).unwrap();
+        fs::write(
+            worktree.join(".git"),
+            format!("gitdir: {}\n", worktree_git.display()),
+        )
+        .unwrap();
+        fs::write(
+            worktree_git.join("gitdir"),
+            format!("{}\n", worktree.join(".git").display()),
+        )
+        .unwrap();
+        fs::write(worktree_git.join("HEAD"), "ref: refs/heads/feature\n").unwrap();
+
+        write_recent(
+            &settings.join("IntelliJIdea2026.2"),
+            &[
+                (main.to_str().unwrap(), 200),
+                (worktree.to_str().unwrap(), 100),
+            ],
+        );
+        let macos = apps.join("IntelliJ IDEA.app/Contents/MacOS");
+        fs::create_dir_all(&macos).unwrap();
+        fs::write(macos.join("idea"), b"#!/bin/sh\n").unwrap();
+
+        let config = test_config(settings, apps, temp.path().join("pins.json"));
+        (temp, config)
+    }
+
+    #[test]
+    fn worktree_mode_lists_only_linked_worktrees() {
+        let (_temp, config) = worktree_fixture();
+
+        let normal = search(
+            &config,
+            SearchOptions {
+                product: None,
+                filter: String::new(),
+                show_stale: false,
+                worktrees: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(normal.items.len(), 1);
+        assert_eq!(normal.items[0].title, "main");
+
+        let worktrees = search(
+            &config,
+            SearchOptions {
+                product: None,
+                filter: String::new(),
+                show_stale: false,
+                worktrees: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(worktrees.items.len(), 1);
+        assert!(worktrees.items[0].title.contains("feature"));
+        assert_eq!(
+            worktrees.items[0]
+                .variables
+                .as_ref()
+                .unwrap()
+                .get("jb_worktree")
+                .and_then(|value| value.as_str()),
+            Some("1")
+        );
+    }
+
     #[test]
     fn hides_stale_by_default_and_sorts_by_timestamp() {
         let (_temp, config) = fixture();
@@ -190,6 +290,7 @@ mod tests {
                 product: None,
                 filter: String::new(),
                 show_stale: false,
+                worktrees: false,
             },
         )
         .unwrap();
@@ -210,6 +311,7 @@ mod tests {
                 product: None,
                 filter: String::new(),
                 show_stale: true,
+                worktrees: false,
             },
         )
         .unwrap();
@@ -229,6 +331,7 @@ mod tests {
                 product: None,
                 filter: String::new(),
                 show_stale: false,
+                worktrees: false,
             },
         )
         .unwrap();
@@ -244,6 +347,7 @@ mod tests {
                 product: None,
                 filter: "idea alpha".to_string(),
                 show_stale: false,
+                worktrees: false,
             },
         )
         .unwrap();
@@ -260,6 +364,7 @@ mod tests {
                 product: Some("nope".to_string()),
                 filter: String::new(),
                 show_stale: false,
+                worktrees: false,
             },
         )
         .unwrap_err();

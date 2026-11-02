@@ -132,6 +132,12 @@ impl Item {
         if entry.pinned {
             subtitle_parts.push("pinned".to_string());
         }
+        if entry.is_worktree {
+            subtitle_parts.push(match &entry.branch {
+                Some(branch) => format!("worktree: {branch}"),
+                None => "worktree".to_string(),
+            });
+        }
         if entry.app.is_none() && entry.bin.is_none() {
             subtitle_parts.push("IDE not found".to_string());
         }
@@ -201,6 +207,14 @@ impl Item {
         variables.insert(
             "jb_stale".to_string(),
             Value::String(if entry.stale { "1" } else { "0" }.to_string()),
+        );
+        variables.insert(
+            "jb_worktree".to_string(),
+            Value::String(if entry.is_worktree { "1" } else { "0" }.to_string()),
+        );
+        variables.insert(
+            "jb_branch".to_string(),
+            Value::String(entry.branch.clone().unwrap_or_default()),
         );
 
         let mut mods = Map::new();
@@ -273,9 +287,11 @@ mod tests {
             settings_roots: vec![],
             app_roots: vec![],
             show_stale: false,
+            hide_worktrees: true,
             cache_seconds: 60,
             pins_file: PathBuf::from("/dev/null"),
             workflow_name: "test".to_string(),
+            default_product: "idea".to_string(),
             products: default_products(),
         }
     }
@@ -301,7 +317,21 @@ mod tests {
             )),
             pinned,
             stale,
+            is_worktree: false,
+            branch: None,
         }
+    }
+
+    #[test]
+    fn worktree_entry_shows_branch() {
+        let mut entry = entry("alpha-feature", false, false);
+        entry.is_worktree = true;
+        entry.branch = Some("feature/x".to_string());
+        let item = Item::from_entry(&entry);
+        assert!(item.subtitle.contains("worktree: feature/x"));
+        let variables = item.variables.unwrap();
+        assert_eq!(variables["jb_worktree"], "1");
+        assert_eq!(variables["jb_branch"], "feature/x");
     }
 
     #[test]

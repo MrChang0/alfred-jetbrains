@@ -9,9 +9,13 @@ mod pins;
 mod product;
 mod projects;
 mod search;
+mod worktree;
 mod xml;
 
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -44,10 +48,16 @@ enum Commands {
         /// Include projects whose directory no longer exists.
         #[arg(long)]
         show_stale: bool,
+
+        /// Show linked git worktrees instead of recent projects.
+        #[arg(long)]
+        worktrees: bool,
     },
 
     /// Open a project in the IDE that last used it.
     Open {
+        /// Project directory (or file) to open; defaults to the current directory.
+        #[arg(default_value = ".")]
         path: PathBuf,
 
         #[arg(long)]
@@ -97,7 +107,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(normalized_args());
     let debug =
         cli.debug || env::var_os("JB_DEBUG").is_some() || env::var_os("alfred_debug").is_some();
     logging::init(debug);
@@ -119,11 +129,13 @@ fn run() -> Result<()> {
             product,
             filter,
             show_stale,
+            worktrees,
         } => {
             let options = SearchOptions {
                 product,
                 filter,
                 show_stale,
+                worktrees,
             };
             let response = match search::search(&config, options) {
                 Ok(response) => response,
@@ -186,4 +198,42 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Allow `jb .` / `jb /path/to/project` as a shortcut for `jb open ...`.
+fn normalized_args() -> Vec<String> {
+    let mut args: Vec<String> = env::args().collect();
+    if args.len() >= 2 {
+        let candidate = args[1].clone();
+        if !candidate.starts_with('-') && is_path_like(&candidate) && !is_subcommand(&candidate) {
+            args.insert(1, "open".to_string());
+        }
+    }
+    args
+}
+
+fn is_path_like(value: &str) -> bool {
+    value == "."
+        || value == ".."
+        || value.starts_with('/')
+        || value.starts_with("./")
+        || value.starts_with("../")
+        || value.starts_with("~/")
+        || Path::new(value).is_dir()
+}
+
+fn is_subcommand(value: &str) -> bool {
+    matches!(
+        value,
+        "search"
+            | "open"
+            | "pin"
+            | "unpin"
+            | "toggle-pin"
+            | "pins"
+            | "config"
+            | "install"
+            | "version"
+            | "help"
+    )
 }

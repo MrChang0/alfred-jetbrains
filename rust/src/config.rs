@@ -24,9 +24,11 @@ pub struct Config {
     pub settings_roots: Vec<PathBuf>,
     pub app_roots: Vec<PathBuf>,
     pub show_stale: bool,
+    pub hide_worktrees: bool,
     pub cache_seconds: u64,
     pub pins_file: PathBuf,
     pub workflow_name: String,
+    pub default_product: String,
     pub products: Vec<ProductConfig>,
 }
 
@@ -35,9 +37,11 @@ struct ConfigFile {
     settings_roots: Option<Vec<String>>,
     app_roots: Option<Vec<String>>,
     show_stale: Option<bool>,
+    hide_worktrees: Option<bool>,
     cache_seconds: Option<u64>,
     pins_file: Option<String>,
     workflow_name: Option<String>,
+    default_product: Option<String>,
     #[serde(default)]
     products: HashMap<String, ProductOverride>,
 }
@@ -95,11 +99,13 @@ impl Config {
             settings_roots,
             app_roots,
             show_stale: file.show_stale.unwrap_or(false),
+            hide_worktrees: file.hide_worktrees.unwrap_or(true),
             cache_seconds: file.cache_seconds.unwrap_or(60),
             pins_file,
             workflow_name: file
                 .workflow_name
                 .unwrap_or_else(|| "alfred-jetbrains-rust".to_string()),
+            default_product: file.default_product.unwrap_or_else(|| "idea".to_string()),
             products,
         })
     }

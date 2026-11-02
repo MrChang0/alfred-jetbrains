@@ -43,6 +43,17 @@ fn run(home: &Path, config: &Path, args: &[&str]) -> std::process::Output {
         .unwrap()
 }
 
+fn run_in(cwd: &Path, home: &Path, config: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jb"))
+        .current_dir(cwd)
+        .env("HOME", home)
+        .env("JB_CONFIG", config)
+        .env("JB_BINARIES", home.join("empty-bin"))
+        .args(args)
+        .output()
+        .unwrap()
+}
+
 fn search(home: &Path, config: &Path, filter: &str, extra: &[&str]) -> serde_json::Value {
     let mut args = vec!["search", "--filter", filter];
     args.extend_from_slice(extra);
@@ -181,6 +192,10 @@ fn install_writes_workflow_files() {
             .and_then(|value| value.as_string())
             == Some("idea")
     }));
+    assert!(objects.iter().any(|object| {
+        object.as_dictionary().unwrap()["type"].as_string()
+            == Some("alfred.workflow.input.fileaction")
+    }));
 }
 
 #[test]
@@ -212,6 +227,47 @@ fn open_spawns_the_configured_binary() {
             fake.to_str().unwrap(),
         ],
     );
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for _ in 0..100 {
+        if marker.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(
+        fs::read_to_string(&marker).unwrap(),
+        fs::canonicalize(&project).unwrap().to_string_lossy()
+    );
+}
+
+#[test]
+fn shorthand_opens_current_directory_with_inference() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path();
+    write_fixture(home);
+    let config = home.join("config.toml");
+    let project = home.join("fresh-clone");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("pom.xml"), "").unwrap();
+
+    let marker = home.join("opened.txt");
+    let idea = home.join("Applications/IntelliJ IDEA.app/Contents/MacOS/idea");
+    fs::write(
+        &idea,
+        format!("#!/bin/sh\nprintf '%s' \"$1\" > '{}'\n", marker.display()),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&idea, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let output = run_in(&project, home, &config, &["."]);
     assert!(
         output.status.success(),
         "stderr: {}",

@@ -2,8 +2,9 @@
 /.idea
 /.vscode
 
-# Nodes
-/node_modules
+# macOS
+.DS_Store
 
-# Misc
-/prefs.plist
+# Rust
+/rust/target/
+/bin/jb

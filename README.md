@@ -50,14 +50,14 @@ The workflow registers the `jb` keyword.
 Type `jb` in Alfred to search all recent projects, or use a product keyword
 directly:
 
-- `idea <name>` — IntelliJ IDEA (Ultimate)
+- `idea <name>` — IntelliJ IDEA
 - `pycharm <name>` — PyCharm (Professional)
 - `pstorm <name>` — PhpStorm
 - `wstorm <name>` — WebStorm
 - `studio <name>` — Android Studio
 - `clion`, `goland`, `datagrip`, `dataspell`, `rider`, `rubymine`,
   `rustrover`, `fleet`, `aqua`, `appcode`, `writerside`
-- Community editions use `ideac` and `pycharmc`
+- PyCharm Community Edition uses `pycharmc`
 
 `jb idea <name>` also works if you prefer the global keyword.
 

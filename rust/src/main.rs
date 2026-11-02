@@ -16,6 +16,7 @@ mod xml;
 
 use std::{
     env,
+    ffi::OsString,
     path::{Path, PathBuf},
 };
 
@@ -274,25 +275,36 @@ fn run() -> Result<()> {
 }
 
 /// Allow `jb .` / `jb /path/to/project` as a shortcut for `jb open ...`.
-fn normalized_args() -> Vec<String> {
-    let mut args: Vec<String> = env::args().collect();
-    if args.len() >= 2 {
-        let candidate = args[1].clone();
-        if !candidate.starts_with('-') && is_path_like(&candidate) && !is_subcommand(&candidate) {
-            args.insert(1, "open".to_string());
-        }
+/// Global flags may precede the path (`jb --debug .`), and arguments are kept
+/// as `OsString` so non-UTF-8 paths do not panic.
+fn normalized_args() -> Vec<OsString> {
+    let mut args: Vec<OsString> = env::args_os().collect();
+    let Some(index) = args
+        .iter()
+        .skip(1)
+        .position(|arg| !arg.to_string_lossy().starts_with('-'))
+        .map(|position| position + 1)
+    else {
+        return args;
+    };
+
+    let candidate = &args[index];
+    let subcommand = candidate.to_str().is_some_and(is_subcommand);
+    if !subcommand && is_path_like(Path::new(candidate)) {
+        args.insert(index, OsString::from("open"));
     }
     args
 }
 
-fn is_path_like(value: &str) -> bool {
+fn is_path_like(path: &Path) -> bool {
+    let value = path.as_os_str().to_string_lossy();
     value == "."
         || value == ".."
         || value.starts_with('/')
         || value.starts_with("./")
         || value.starts_with("../")
         || value.starts_with("~/")
-        || Path::new(value).is_dir()
+        || path.exists()
 }
 
 fn is_subcommand(value: &str) -> bool {

@@ -110,14 +110,16 @@ pub fn resolve_target(
     } else {
         path.parent().unwrap_or(path)
     };
+    // The configured default accepts both ids and keywords (`ij`), and an
+    // unknown default must not silently fall back to the first product in
+    // the table (Android Studio).
+    let default_product = config
+        .product_by_keyword(&config.default_product)
+        .or_else(|| config.product_by_id(&config.default_product))
+        .map(|product| product.id.clone());
     let product_id = explicit_product
         .or_else(|| infer_product(inference_root).map(ToString::to_string))
-        .or_else(|| {
-            config
-                .product_by_id(&config.default_product)
-                .map(|product| product.id.clone())
-        })
-        .or_else(|| config.products.first().map(|product| product.id.clone()));
+        .or(default_product);
 
     if let Some(product_id) = product_id
         && let Some(product) = config
@@ -355,6 +357,55 @@ mod tests {
         let target = resolve_target(&config, &project, None, None, None).unwrap();
         assert!(target.app.unwrap().ends_with("PyCharm.app"));
         assert!(target.bin.unwrap().ends_with("Contents/MacOS/pycharm"));
+    }
+
+    fn test_config(apps: PathBuf, default_product: &str) -> Config {
+        Config {
+            config_path: PathBuf::from("/dev/null"),
+            settings_roots: vec![],
+            app_roots: vec![apps],
+            show_stale: false,
+            hide_worktrees: true,
+            sort: "recent".to_string(),
+            cache_seconds: 60,
+            pins_file: PathBuf::from("/dev/null"),
+            workflow_name: "test".to_string(),
+            default_product: default_product.to_string(),
+            terminal: "Terminal".to_string(),
+            ignore: vec![],
+            forgotten_file: PathBuf::from("/dev/null"),
+            products: default_products(),
+        }
+    }
+
+    #[test]
+    fn default_product_accepts_a_keyword() {
+        let temp = tempdir().unwrap();
+        let apps = temp.path().join("Applications");
+        let macos = apps.join("IntelliJ IDEA.app/Contents/MacOS");
+        fs::create_dir_all(&macos).unwrap();
+        fs::write(macos.join("idea"), b"#!/bin/sh\n").unwrap();
+        let project = temp.path().join("plain");
+        fs::create_dir_all(&project).unwrap();
+
+        let config = test_config(apps, "ij");
+        let target = resolve_target(&config, &project, None, None, None).unwrap();
+        assert!(target.app.unwrap().ends_with("IntelliJ IDEA.app"));
+    }
+
+    #[test]
+    fn unknown_default_product_does_not_pick_the_first_product() {
+        let temp = tempdir().unwrap();
+        let apps = temp.path().join("Applications");
+        let macos = apps.join("Android Studio.app/Contents/MacOS");
+        fs::create_dir_all(&macos).unwrap();
+        fs::write(macos.join("studio"), b"#!/bin/sh\n").unwrap();
+        let project = temp.path().join("plain");
+        fs::create_dir_all(&project).unwrap();
+
+        let config = test_config(apps, "typo");
+        let target = resolve_target(&config, &project, None, None, None).unwrap();
+        assert_eq!(target, Target::default());
     }
 
     #[test]

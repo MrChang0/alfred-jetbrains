@@ -47,7 +47,7 @@ The workflow registers `jb` plus one keyword per product, using the first entry
 in each product's `keywords` list (`idea`, `pycharm`, `pstorm`, `wstorm`,
 `studio`, `clion`, `goland`, `datagrip`, `dataspell`, `rider`, `rubymine`,
 `rustrover`, `fleet`, `aqua`, `appcode`, `writerside`, `nova`, `air`,
-`ideac`, `pycharmc`). Change the first keyword in `[products.<id>]` and rerun
+`pycharmc`). Change the first keyword in `[products.<id>]` and rerun
 `jb install` to customize it.
 
 ## Commands
@@ -72,8 +72,9 @@ jb install [--workflow-name <name>] [--retain]
 jb version
 ```
 
-A leading product token in `--filter` is consumed, so `jb idea pangolin` scopes
-to IntelliJ IDEA. `jb config` prints the effective configuration.
+A leading product token in `--filter` is consumed when a query follows it, so
+`jb idea pangolin` scopes to IntelliJ IDEA; a bare keyword such as `go` is
+treated as a normal search term. `jb config` prints the effective configuration.
 
 `jb open` defaults to the current directory, so after cloning a repository:
 
@@ -182,8 +183,11 @@ installed workflow status.
 ## Search
 
 Filtering uses a case-insensitive subsequence match, so `pngln` finds
-`pangolin`. When a query is present, matches are ordered by score; otherwise
-the configured `sort` order applies:
+`pangolin`. Whitespace-separated terms must all match, so `fory java` finds
+`fory-java` and `github agentscope` can match path components. Version queries
+such as `2026.2` match the IDE version, and `~/Code` matches a home-relative
+path. When a query is present, matches are ordered by score; otherwise the
+configured `sort` order applies:
 
 - `recent` (default) — most recently opened first
 - `oldest` — least recently opened first
@@ -207,7 +211,7 @@ directories. The normal project list hides linked worktrees by default; set
 ## How discovery works
 
 1. Every configured settings root is scanned for product-version directories
-   (`IntelliJIdea2026.2`, `PyCharm2026.2`, `AndroidStudio2024.3`, `Fleet`, …).
+   (`IntelliJIdea2026.2`, `PyCharm2026.2`, `AndroidStudio2026.2`, `Fleet`, …).
 2. `recentProjects.xml`, `recentProjectDirectories.xml`, `recentSolutions.xml`,
    and Fleet `backend/**/trusted-paths.xml` are merged per settings directory.
 3. Entries carry `projectOpenTimestamp`/`activationTimestamp`, so the same

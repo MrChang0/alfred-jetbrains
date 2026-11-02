@@ -111,27 +111,10 @@ pub static PRODUCTS: &[Product] = &[
         fleet: false,
     },
     Product {
-        id: "idea-ce",
-        name: "IntelliJ IDEA CE",
-        preference_prefix: "IdeaIC",
-        application_names: &[
-            "IntelliJ IDEA CE",
-            "IntelliJ IDEA Community",
-            "IntelliJ IDEA Community Edition",
-        ],
-        binaries: &["idea", "ideac"],
-        keywords: &["ideac", "idea-ce", "ideaic"],
-        fleet: false,
-    },
-    Product {
         id: "idea",
         name: "IntelliJ IDEA",
         preference_prefix: "IntelliJIdea",
-        application_names: &[
-            "IntelliJ IDEA",
-            "IntelliJ IDEA Ultimate",
-            "IntelliJ IDEA Ultimate Edition",
-        ],
+        application_names: &["IntelliJ IDEA"],
         binaries: &["idea", "ideau"],
         keywords: &["idea", "ij"],
         fleet: false,

@@ -12,11 +12,22 @@ pub struct RepoInfo {
     pub common_git_dir: PathBuf,
 }
 
+/// Project entries may be directories or files (for example a Rider `.sln`
+/// solution); repository metadata lives in the containing directory.
+fn repo_root(path: &Path) -> &Path {
+    if path.is_dir() {
+        path
+    } else {
+        path.parent().unwrap_or(path)
+    }
+}
+
 pub fn repo_info(path: &Path) -> Option<RepoInfo> {
-    let dot_git = path.join(".git");
+    let root = repo_root(path);
+    let dot_git = root.join(".git");
     if dot_git.is_dir() {
         return Some(RepoInfo {
-            main_root: path.to_path_buf(),
+            main_root: root.to_path_buf(),
             common_git_dir: dot_git,
         });
     }
@@ -24,7 +35,7 @@ pub fn repo_info(path: &Path) -> Option<RepoInfo> {
         return None;
     }
 
-    let git_dir = resolve_git_dir(path)?;
+    let git_dir = resolve_git_dir(root)?;
     let worktrees_dir = git_dir.parent()?;
     if worktrees_dir.file_name()?.to_str()? != "worktrees" {
         return None;
@@ -41,10 +52,11 @@ pub fn repo_info(path: &Path) -> Option<RepoInfo> {
 /// A linked worktree has a `.git` file pointing at
 /// `<main>/.git/worktrees/<name>`; submodules point at `.git/modules/...`.
 pub fn is_linked_worktree(path: &Path) -> bool {
-    if !path.join(".git").is_file() {
+    let root = repo_root(path);
+    if !root.join(".git").is_file() {
         return false;
     }
-    resolve_git_dir(path)
+    resolve_git_dir(root)
         .and_then(|git_dir| {
             git_dir
                 .parent()
@@ -91,10 +103,11 @@ pub fn linked_worktrees(path: &Path) -> Vec<PathBuf> {
 
 /// Current branch (or short detached commit) of a repository/worktree.
 pub fn branch_for(path: &Path) -> Option<String> {
-    let git_dir = if path.join(".git").is_dir() {
-        path.join(".git")
+    let root = repo_root(path);
+    let git_dir = if root.join(".git").is_dir() {
+        root.join(".git")
     } else {
-        resolve_git_dir(path)?
+        resolve_git_dir(root)?
     };
     let head = fs::read_to_string(git_dir.join("HEAD")).ok()?;
     let head = head.trim();
@@ -160,5 +173,19 @@ mod tests {
         assert_eq!(worktrees, vec![fs::canonicalize(&worktree).unwrap()]);
         assert_eq!(branch_for(&main).as_deref(), Some("main"));
         assert_eq!(branch_for(&worktree).as_deref(), Some("feature"));
+    }
+
+    #[test]
+    fn file_entries_use_the_parent_repository() {
+        let (_temp, main, worktree) = fake_repo();
+        let solution = main.join("Solution.sln");
+        fs::write(&solution, "").unwrap();
+        assert_eq!(repo_info(&solution).unwrap().main_root, main);
+        assert_eq!(branch_for(&solution).as_deref(), Some("main"));
+
+        let worktree_solution = worktree.join("Solution.sln");
+        fs::write(&worktree_solution, "").unwrap();
+        assert!(is_linked_worktree(&worktree_solution));
+        assert_eq!(branch_for(&worktree_solution).as_deref(), Some("feature"));
     }
 }

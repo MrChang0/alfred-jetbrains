@@ -135,28 +135,27 @@ pub fn dedupe(entries: Vec<ProjectEntry>) -> Vec<ProjectEntry> {
 /// reads `.git/worktrees/*/gitdir`, so it does not run `git` or scan unknown
 /// directories.
 pub fn worktree_entries(entries: &[ProjectEntry]) -> Vec<ProjectEntry> {
-    let mut main_roots = Vec::new();
-    let mut seen_roots = HashSet::new();
+    // Best recent entry per repository and product, computed in one pass.
+    // A repository opened in more than one product must yield worktrees for
+    // each of those products, not just the most recent one.
+    let mut bases: HashMap<(PathBuf, String), &ProjectEntry> = HashMap::new();
     for entry in entries {
-        if let Some(info) = worktree::repo_info(&entry.path)
-            && seen_roots.insert(info.main_root.clone())
-        {
-            main_roots.push(info.main_root);
+        let Some(info) = worktree::repo_info(&entry.path) else {
+            continue;
+        };
+        let key = (info.main_root, entry.product.id.clone());
+        match bases.get(&key) {
+            Some(existing)
+                if existing.open_timestamp.unwrap_or(i64::MIN)
+                    >= entry.open_timestamp.unwrap_or(i64::MIN) => {}
+            _ => {
+                bases.insert(key, entry);
+            }
         }
     }
 
-    let mut result: HashMap<String, ProjectEntry> = HashMap::new();
-    for main_root in main_roots {
-        let base = entries
-            .iter()
-            .filter(|entry| {
-                worktree::repo_info(&entry.path).is_some_and(|info| info.main_root == main_root)
-            })
-            .max_by_key(|entry| entry.open_timestamp.unwrap_or(i64::MIN));
-        let Some(base) = base else {
-            continue;
-        };
-
+    let mut result: HashMap<(String, String), ProjectEntry> = HashMap::new();
+    for ((main_root, product_id), base) in bases {
         let base_name = if main_root.exists() {
             project_name(&main_root)
         } else {
@@ -169,9 +168,9 @@ pub fn worktree_entries(entries: &[ProjectEntry]) -> Vec<ProjectEntry> {
                 Some(branch) => format!("{base_name} ({branch})"),
                 None => format!("{base_name} (worktree)"),
             };
-            let key = dedupe_key(&path);
+            let key = (product_id.clone(), dedupe_key(&path));
             let entry = ProjectEntry {
-                key: key.clone(),
+                key: key.1.clone(),
                 path: path.clone(),
                 name,
                 product: base.product.clone(),
@@ -445,7 +444,16 @@ impl AppIndex {
 
 impl AppBundle {
     fn matches(&self, name: &str) -> bool {
-        self.stem == name || self.stem.starts_with(&format!("{name} "))
+        if self.stem == name {
+            return true;
+        }
+        // Versioned bundles look like "IntelliJ IDEA 2026.2". A word suffix
+        // such as CE/Ultimate identifies a different product and must match
+        // that product's own application name instead.
+        self.stem.strip_prefix(name).is_some_and(|rest| {
+            rest.trim_start_matches([' ', '-'])
+                .starts_with(|character: char| character.is_ascii_digit())
+        })
     }
 }
 
@@ -590,7 +598,7 @@ mod tests {
         fs::create_dir_all(&old_project).unwrap();
         fs::create_dir_all(&new_project).unwrap();
         write_recent(
-            &settings.join("IntelliJIdea2025.3"),
+            &settings.join("IntelliJIdea2026.1"),
             &[(old_project.to_str().unwrap(), 50)],
         );
         write_recent(
@@ -610,6 +618,92 @@ mod tests {
         );
         let entries = discover(&test_config(&settings, &apps));
         assert!(entries.iter().any(|entry| entry.stale));
+    }
+
+    #[test]
+    fn bundle_name_suffixes_are_not_treated_as_versions() {
+        let suffixed = AppBundle {
+            path: PathBuf::from("/Applications/IntelliJ IDEA CE.app"),
+            stem: "IntelliJ IDEA CE".to_string(),
+            version: None,
+        };
+        assert!(!suffixed.matches("IntelliJ IDEA"));
+
+        let versioned = AppBundle {
+            path: PathBuf::from("/Applications/IntelliJ IDEA 2026.2.app"),
+            stem: "IntelliJ IDEA 2026.2".to_string(),
+            version: Some("2026.2".to_string()),
+        };
+        assert!(versioned.matches("IntelliJ IDEA"));
+    }
+
+    #[test]
+    fn versioned_bundle_with_hyphen_matches() {
+        let temp = tempdir().unwrap();
+        let apps = temp.path().join("Applications");
+        let macos = apps.join("IntelliJ IDEA-2026.2.app/Contents/MacOS");
+        fs::create_dir_all(&macos).unwrap();
+        fs::write(macos.join("idea"), b"#!/bin/sh\n").unwrap();
+        let config = test_config(&temp.path().join("settings"), &apps);
+        let index = build_app_index(&config);
+        let products = default_products();
+        let idea = products
+            .iter()
+            .find(|product| product.id == "idea")
+            .unwrap();
+
+        assert!(
+            index
+                .find(idea, Some("2026.2"))
+                .unwrap()
+                .ends_with("IntelliJ IDEA-2026.2.app")
+        );
+    }
+
+    #[test]
+    fn worktrees_are_attributed_to_each_product() {
+        let temp = tempdir().unwrap();
+        let settings = temp.path().join("JetBrains");
+        let apps = temp.path().join("Applications");
+        let main = temp.path().join("projects/main");
+        let common = main.join(".git");
+        let worktree_git = common.join("worktrees/feature");
+        fs::create_dir_all(&worktree_git).unwrap();
+        fs::write(common.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let worktree = temp.path().join("projects/main-feature");
+        fs::create_dir_all(&worktree).unwrap();
+        fs::write(
+            worktree.join(".git"),
+            format!("gitdir: {}\n", worktree_git.display()),
+        )
+        .unwrap();
+        fs::write(
+            worktree_git.join("gitdir"),
+            format!("{}\n", worktree.join(".git").display()),
+        )
+        .unwrap();
+        fs::write(worktree_git.join("HEAD"), "ref: refs/heads/feature\n").unwrap();
+
+        write_recent(
+            &settings.join("IntelliJIdea2026.2"),
+            &[(main.to_str().unwrap(), 100)],
+        );
+        write_recent(
+            &settings.join("PyCharm2026.2"),
+            &[(main.to_str().unwrap(), 200)],
+        );
+
+        let entries = discover(&test_config(&settings, &apps));
+        let worktrees = worktree_entries(&entries);
+        assert!(worktrees.iter().any(|entry| entry.product.id == "idea"));
+        assert!(worktrees.iter().any(|entry| entry.product.id == "pycharm"));
+        assert!(
+            worktrees
+                .iter()
+                .all(|entry| entry.path == fs::canonicalize(&worktree).unwrap()
+                    || entry.path == worktree)
+        );
     }
 
     #[test]

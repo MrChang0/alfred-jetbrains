@@ -394,6 +394,103 @@ fn shorthand_opens_current_directory_with_inference() {
 }
 
 #[test]
+fn global_flag_before_path_shorthand() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path();
+    write_fixture(home);
+    let config = home.join("config.toml");
+    let project = home.join("fresh-clone");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("pom.xml"), "").unwrap();
+
+    let marker = home.join("opened.txt");
+    let idea = home.join("Applications/IntelliJ IDEA.app/Contents/MacOS/idea");
+    fs::write(
+        &idea,
+        format!("#!/bin/sh\nprintf '%s' \"$1\" > '{}'\n", marker.display()),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&idea, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let output = run_in(&project, home, &config, &["--debug", "."]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for _ in 0..100 {
+        if marker.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(
+        fs::read_to_string(&marker).unwrap(),
+        fs::canonicalize(&project).unwrap().to_string_lossy()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_path_does_not_panic() {
+    use std::{
+        ffi::OsString,
+        os::unix::ffi::{OsStrExt, OsStringExt},
+    };
+
+    let temp = TempDir::new().unwrap();
+    let home = temp.path();
+    write_fixture(home);
+    let config = home.join("config.toml");
+    let mut name = b"bad-".to_vec();
+    name.push(0xff);
+    let project = home.join("projects").join(OsString::from_vec(name));
+
+    let marker = home.join("opened.txt");
+    let idea = home.join("Applications/IntelliJ IDEA.app/Contents/MacOS/idea");
+    fs::write(
+        &idea,
+        format!("#!/bin/sh\nprintf '%s' \"$1\" > '{}'\n", marker.display()),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&idea, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_jb"))
+        .current_dir(home)
+        .env("HOME", home)
+        .env("JB_CONFIG", &config)
+        .env("JB_BINARIES", home.join("empty-bin"))
+        .arg(&project)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for _ in 0..100 {
+        if marker.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(
+        fs::read(&marker).unwrap(),
+        project.as_os_str().as_bytes(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn install_copies_the_binary_by_default() {
     let temp = TempDir::new().unwrap();
     let home = temp.path();

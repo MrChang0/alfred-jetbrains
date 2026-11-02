@@ -55,11 +55,12 @@ pub fn unpin(path: &Path, project: &Path) -> Result<bool> {
     let projects = load(path)?;
     let target = absolute(project);
     let key = dedupe_key(Path::new(&target));
+    let original_len = projects.len();
     let filtered = projects
         .into_iter()
         .filter(|stored| dedupe_key(Path::new(stored)) != key)
         .collect::<Vec<_>>();
-    let changed = filtered.len() != load(path)?.len();
+    let changed = filtered.len() != original_len;
     if changed {
         save(path, &filtered)?;
     }
@@ -111,6 +112,17 @@ mod tests {
 
         assert!(unpin(&pins, &project).unwrap());
         assert_eq!(load(&pins).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn unpin_reports_not_pinned() {
+        let dir = tempdir().unwrap();
+        let project = dir.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let pins = dir.path().join("pins.json");
+
+        assert!(!unpin(&pins, &project).unwrap());
+        assert!(!pins.exists());
     }
 
     #[test]

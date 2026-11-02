@@ -18,9 +18,17 @@ pub fn expand_project_path(key: &str) -> PathBuf {
 }
 
 /// JetBrains stores pseudo-projects such as LightEdit under its application
-/// config directory; those are not user projects.
+/// config directory, and Maven-style keys under `$MAVEN_REPOSITORY$`. Only
+/// `$USER_HOME$` refers to a real user project, so every other leading
+/// macro is filtered out rather than enumerating known cases.
 pub fn is_internal_key(key: &str) -> bool {
-    key.starts_with("$APPLICATION_CONFIG_DIR$") || key.starts_with("$APPLICATION_HOME_DIR$")
+    let Some(rest) = key.strip_prefix('$') else {
+        return false;
+    };
+    let Some(end) = rest.find('$') else {
+        return true;
+    };
+    &rest[..end] != "USER_HOME"
 }
 
 /// A stable key used for deduplication and pin matching. Existing paths are
@@ -136,7 +144,9 @@ mod tests {
     #[test]
     fn skips_internal_keys() {
         assert!(is_internal_key("$APPLICATION_CONFIG_DIR$/light-edit"));
+        assert!(is_internal_key("$MAVEN_REPOSITORY$/com/example/demo"));
         assert!(!is_internal_key("$USER_HOME$/Code/demo"));
+        assert!(!is_internal_key("/Users/me/Code/demo"));
     }
 
     #[test]

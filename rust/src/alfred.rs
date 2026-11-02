@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::{config::Config, discovery::ProjectEntry};
+use crate::{config::Config, discovery::ProjectEntry, hash, projects::basename};
 
 const GENERIC_ICON: &str =
     "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/public.generic-pc.icns";
@@ -233,7 +233,7 @@ impl Item {
         );
 
         Self {
-            uid: format!("{:016x}", fnv1a(&entry.key)),
+            uid: format!("{:016x}", hash::fnv1a(&entry.key)),
             title,
             match_: format!(
                 "{} {} {}",
@@ -266,22 +266,6 @@ fn modifier(subtitle: &str, action: &str) -> Value {
 
 fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().to_string()
-}
-
-fn basename(path: &Path) -> String {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| path.to_string_lossy().to_string())
-}
-
-fn fnv1a(value: &str) -> u64 {
-    let mut hash = 0xcbf29ce484222325_u64;
-    for byte in value.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    hash
 }
 
 #[cfg(test)]

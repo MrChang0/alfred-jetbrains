@@ -1,0 +1,25 @@
+[package]
+name = "alfred-jetbrains-cli"
+version = "0.1.0"
+edition = "2024"
+description = "Fast Alfred workflow CLI for opening JetBrains projects"
+license = "MIT"
+repository = "https://github.com/MrChang0/alfred-jetbrains"
+
+[[bin]]
+name = "jb"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+plist = "1"
+regex = "1"
+roxmltree = "0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"

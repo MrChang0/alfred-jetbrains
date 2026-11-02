@@ -1,0 +1,189 @@
+mod alfred;
+mod config;
+mod discovery;
+mod hash;
+mod install;
+mod logging;
+mod open;
+mod pins;
+mod product;
+mod projects;
+mod search;
+mod xml;
+
+use std::{env, path::PathBuf};
+
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+
+use crate::{config::Config, install::InstallOptions, open::OpenOptions, search::SearchOptions};
+
+#[derive(Parser)]
+#[command(name = "jb", version, about = "Open JetBrains projects from Alfred")]
+struct Cli {
+    /// Enable debug logging on stderr.
+    #[arg(long, global = true)]
+    debug: bool,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Print Alfred Script Filter JSON for recent projects.
+    Search {
+        /// Scope to a product id or keyword, e.g. idea or pycharm.
+        #[arg(long)]
+        product: Option<String>,
+
+        /// Filter text. A leading product keyword is consumed.
+        #[arg(long, default_value = "")]
+        filter: String,
+
+        /// Include projects whose directory no longer exists.
+        #[arg(long)]
+        show_stale: bool,
+    },
+
+    /// Open a project in the IDE that last used it.
+    Open {
+        path: PathBuf,
+
+        #[arg(long)]
+        product: Option<String>,
+
+        #[arg(long)]
+        app: Option<PathBuf>,
+
+        #[arg(long)]
+        bin: Option<PathBuf>,
+    },
+
+    /// Pin a project.
+    Pin { path: PathBuf },
+
+    /// Unpin a project.
+    Unpin { path: PathBuf },
+
+    /// Toggle a project's pin.
+    TogglePin { path: PathBuf },
+
+    /// List pinned projects.
+    Pins,
+
+    /// Print the effective configuration.
+    Config,
+
+    /// Install the Alfred workflow.
+    Install {
+        #[arg(long)]
+        workflow_name: Option<String>,
+
+        /// Do not copy the running binary into the workflow.
+        #[arg(long)]
+        retain: bool,
+    },
+
+    /// Print the version.
+    Version,
+}
+
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("jb: {error:#}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
+    let cli = Cli::parse();
+    let debug =
+        cli.debug || env::var_os("JB_DEBUG").is_some() || env::var_os("alfred_debug").is_some();
+    logging::init(debug);
+
+    let config = match Config::load() {
+        Ok(config) => config,
+        Err(error) => {
+            if matches!(cli.command, Commands::Search { .. }) {
+                let response = alfred::error_response(60, &format!("{error:#}"));
+                println!("{}", serde_json::to_string(&response)?);
+                return Ok(());
+            }
+            return Err(error);
+        }
+    };
+
+    match cli.command {
+        Commands::Search {
+            product,
+            filter,
+            show_stale,
+        } => {
+            let options = SearchOptions {
+                product,
+                filter,
+                show_stale,
+            };
+            let response = match search::search(&config, options) {
+                Ok(response) => response,
+                Err(error) => alfred::error_response(config.cache_seconds, &format!("{error:#}")),
+            };
+            println!("{}", serde_json::to_string(&response)?);
+        }
+        Commands::Open {
+            path,
+            product,
+            app,
+            bin,
+        } => {
+            open::open(
+                &config,
+                OpenOptions {
+                    path,
+                    product,
+                    app,
+                    bin,
+                },
+            )?;
+        }
+        Commands::Pin { path } => {
+            let added = pins::pin(&config.pins_file, &path)?;
+            println!("{}", if added { "pinned" } else { "already pinned" });
+        }
+        Commands::Unpin { path } => {
+            let removed = pins::unpin(&config.pins_file, &path)?;
+            println!("{}", if removed { "unpinned" } else { "not pinned" });
+        }
+        Commands::TogglePin { path } => {
+            let pinned = pins::toggle(&config.pins_file, &path)?;
+            println!("{}", if pinned { "pinned" } else { "unpinned" });
+        }
+        Commands::Pins => {
+            for path in pins::load(&config.pins_file)? {
+                println!("{path}");
+            }
+        }
+        Commands::Config => {
+            println!("{}", config.effective_json()?);
+        }
+        Commands::Install {
+            workflow_name,
+            retain,
+        } => {
+            let workflow = install::install(
+                &config,
+                InstallOptions {
+                    workflow_name,
+                    retain,
+                },
+            )?;
+            println!("Installed workflow: {}", workflow.display());
+        }
+        Commands::Version => {
+            println!("{}", env!("CARGO_PKG_VERSION"));
+        }
+    }
+
+    Ok(())
+}

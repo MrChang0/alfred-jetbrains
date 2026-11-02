@@ -1,104 +1,112 @@
-# JetBrains: Open project
+# JetBrains: Open project (Rust)
 
-**Alfred5** workflow to easily open your projects with your favorite JetBrains product.
+An Alfred 5 workflow that opens your recent JetBrains projects across every
+installed IDE and every installed version.
 
-![npm version](https://img.shields.io/npm/v/@bchatard/alfred-jetbrains.svg?style=for-the-badge)
-![npm downloads per week](https://img.shields.io/npm/dm/@bchatard/alfred-jetbrains.svg?style=for-the-badge)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=bchatard_alfred-jetbrains&metric=alert_status)](https://sonarcloud.io/dashboard?id=bchatard_alfred-jetbrains)
+## Features
+
+- **All products, all versions** — scans every JetBrains settings directory and
+  merges `recentProjects.xml`, `recentProjectDirectories.xml`,
+  `recentSolutions.xml`, and Fleet `trusted-paths.xml`
+- **Recency order** — uses the project-open timestamp, so the same project
+  opened in several IDEs or versions resolves to the most recent one
+- **Stale filtering** — hides projects whose directories no longer exist
+  (`--show-stale` to include them); pinned projects are always shown
+- **Pins** — favorite projects stay at the top with `★`
+- **Correct IDE/version** — opens the project in the IDE that last used it
+- **Product scoping** — `jb idea pangolin`, `jb pycharm foo`, `jb webstorm bar`
+- **Alfred modifiers** — `⌘` pin/unpin, `⌥` reveal in Finder, `⌃` copy path
 
 ## Requirements
 
-You need [Node.js LTS](https://nodejs.org) and [Alfred 5.7+](https://www.alfredapp.com) with the paid [Powerpack](https://www.alfredapp.com/powerpack/) upgrade.
+- macOS
+- [Alfred 5](https://www.alfredapp.com) with the Powerpack
+- One or more JetBrains IDEs
+- Rust toolchain (to build from source)
 
-This workflow need one of JetBrains products (**2019.1+**), and its [shell script](#init-shell-script) to works
-
-## About issues
-
-It's my daily tool, so I will fix issue that I can reproduce with **my environment**, which is
-* macOS 26.1
-* Alfred 5.7 (latest available)
-* at least Node 22, but not really important, node is only required to install this workflow
-
-Please check the [troubleshooting guide](doc/troubleshooting.md) first, and other issues.
-And please follow the issue template for bug report 🙏
-
-## Installation / Update
+## Build and install
 
 ```shell
-npm install -g @bchatard/alfred-jetbrains
+./tool/build_jb.sh    # builds bin/jb
+./bin/jb install      # installs the "JetBrains Projects (Rust)" workflow
 ```
 
-or download binary from [alfred-jetbrains-cli releases page](https://github.com/bchatard/alfred-jetbrains-cli/releases/latest)
+The workflow registers the `jb` keyword.
+
+## Usage
+
+Type `jb` in Alfred to search all recent projects, or use a product keyword
+directly:
+
+- `idea <name>` — IntelliJ IDEA (Ultimate)
+- `pycharm <name>` — PyCharm (Professional)
+- `pstorm <name>` — PhpStorm
+- `wstorm <name>` — WebStorm
+- `studio <name>` — Android Studio
+- `clion`, `goland`, `datagrip`, `dataspell`, `rider`, `rubymine`,
+  `rustrover`, `fleet`, `aqua`, `appcode`, `writerside`
+- Community editions use `ideac` and `pycharmc`
+
+`jb idea <name>` also works if you prefer the global keyword.
+
+Hold `⌘` to pin/unpin, `⌥` to reveal in Finder, `⌃` to copy the path.
+
+## Configuration
+
+The config file is `~/.config/alfred-jetbrains/config.toml` (override with
+`JB_CONFIG`):
+
+```toml
+settings_roots = [
+  "~/Library/Application Support/JetBrains",
+  "~/Library/Application Support/Google",
+  "~/Library/Preferences",
+]
+app_roots = [
+  "/Applications",
+  "~/Applications",
+  "~/Applications/JetBrains Toolbox",
+]
+show_stale = false
+cache_seconds = 60
+pins_file = "~/.config/alfred-jetbrains/pins.json"
+workflow_name = "alfred-jetbrains-rust"
+
+[products.idea]
+preference_prefix = "IntelliJIdea"
+application_names = ["IntelliJ IDEA"]
+binaries = ["idea"]
+keywords = ["idea", "ij"]
+```
+
+`jb config` prints the effective configuration. See
+[`rust/README.md`](rust/README.md) for discovery details and the full command
+list.
+
+## Development
+
 ```shell
-# Since the bin is not (yet) signed
-xattr -d com.apple.quarantine ./alfred_jetbrains_cli
-chmod +x ./alfred_jetbrains_cli
-./alfred_jetbrains_cli install
+cd rust
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo fmt --check
 ```
-(new process to remove Node dependency, it might not work for all cases)
 
-### Init shell script
+## Universal binary
 
-- Via JetBrains Toolbox:
-  - Open the JetBrains Toolbox window, and then click on the parameter icon;
-  - In the following form, enable _Generate shell scripts_, and set a path for script
-  - More info: [Toolbox App 1.11: What’s New.](https://blog.jetbrains.com/blog/2018/08/23/toolbox-app-1-11-whats-new/)
-- Via Product (removed since 2023.x)
-  ![Create Command-line Launcher](./doc/img/command_line_launcher.gif)
+Rust binaries merge cleanly with `lipo`:
 
-## How to use
-
-- Open Alfred with your usual hotkey
-- Type keyword (example `pstorm`) followed by your project name
-  ![jetbrains-projects-secret-light](https://raw.githubusercontent.com/bchatard/alfred-jetbrains/master/doc/img/jetbrains-projects-secret-light.png)
-
-<details>
-<summary>Default Keywords</summary>
-
-- Cross Products: `jb` (search projects on for all products)
-
-- [Keywords by products](doc/customisation/keywords.md#default-keywords)
-
-</details>
-
-<details>
-<summary>Supported versions</summary>
-I test with these products/versions:
-
-- AndroidStudio: since 3.+;
-- AppCode: since 2018.3;
-- Aqua: since 2023.1;
-- CLion: since 2018.3;
-- CLion Nova: since 2023.3;
-- DataGrip: since 2018.3;
-- DataSpell: since 2023.1;
-- Fleet: public preview;
-- GoLand: since 2018.3;
-- IntelliJ Idea: since 2018.3;
-- PhpStorm: since 2018.3;
-- PyCharm: since 2018.3;
-- Rider: since 2018.3;
-- RubyMine: since 2018.3;
-- RustRover: since 2023.2;
-- WebStorm: since 2018.3;
-- Writerside: since 2023.2;
-
-</details>
-
-## Customisation
-
-- [Change Product Edition](doc/customisation/edition.md)
-- [Change `bin` name](doc/customisation/bin.md)
-- [Change keywords](doc/customisation/keywords.md)
-
-Some of JetBrains product are available in different editions (ex: PyCharm - Professional, Edu & Community).
-In that case they share the same `bin` / `keyword`, so you need to customize the _Preferences_ folder to retrieve your projects.
-
-
-## Changelog
-
-[Changelog](https://github.com/bchatard/alfred-jetbrains/releases)
+```shell
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+(cd rust && cargo build --release --target aarch64-apple-darwin)
+(cd rust && cargo build --release --target x86_64-apple-darwin)
+lipo -create \
+  rust/target/aarch64-apple-darwin/release/jb \
+  rust/target/x86_64-apple-darwin/release/jb \
+  -output bin/jb
+./bin/jb install
+```
 
 ## License
 
-[MIT](LICENSE) © [bchatard](https://github.com/bchatard)
+MIT © [bchatard](https://github.com/bchatard); Rust implementation © MrChang0.
